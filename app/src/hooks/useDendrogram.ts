@@ -50,32 +50,28 @@ export function useDendrogram() {
   const assignClusters = useCallback((root: TreeNode, threshold: number): number => {
     let clusterId = 0;
 
-    function traverse(node: TreeNode, currentCluster: number): void {
-      if (!node.children || node.children.length === 0) {
-        // Nodo hoja
-        node.clusterId = currentCluster;
-        return;
-      }
-
-      if (node.distance <= threshold) {
-        // Cortar aquí - asignar nuevo cluster
-        node.clusterId = clusterId;
-        // Propagar a todos los descendientes
-        function assignToAllDescendants(n: TreeNode, cid: number) {
-          n.clusterId = cid;
-          if (n.children) {
-            n.children.forEach(child => assignToAllDescendants(child, cid));
-          }
-        }
-        assignToAllDescendants(node, clusterId);
-        clusterId++;
-      } else {
-        // Continuar recursivamente
-        node.children.forEach(child => traverse(child, currentCluster));
+    function assignToAllDescendants(node: TreeNode, cid: number): void {
+      node.clusterId = cid;
+      if (node.children) {
+        node.children.forEach(child => assignToAllDescendants(child, cid));
       }
     }
 
-    traverse(root, 0);
+    function traverse(node: TreeNode): void {
+      const children = node.children;
+      const isLeaf = !children || children.length === 0;
+      const isClusterRoot = isLeaf || node.distance <= threshold;
+
+      if (isClusterRoot) {
+        assignToAllDescendants(node, clusterId);
+        clusterId++;
+        return;
+      }
+
+      children.forEach(traverse);
+    }
+
+    traverse(root);
     return clusterId;
   }, []);
 
