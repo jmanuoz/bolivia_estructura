@@ -3,7 +3,7 @@ import type { DendrogramData, TreeNode, NodeDetails } from '@/types/dendrogram';
 
 export function useDendrogram() {
   const [data, setData] = useState<DendrogramData | null>(null);
-  const [cutThreshold, setCutThreshold] = useState<number>(0.5);
+  const [cutThreshold, setCutThreshold] = useState<number>(0.536);
   const [selectedNode, setSelectedNode] = useState<NodeDetails | null>(null);
   const [hoveredNode, setHoveredNode] = useState<number | null>(null);
 
@@ -81,7 +81,7 @@ export function useDendrogram() {
     // Encontrar distancia máxima para inicializar el threshold
     if (newData.linkage.length > 0) {
       const maxDist = Math.max(...newData.linkage.map(row => row[2]));
-      setCutThreshold(maxDist * 0.5);
+      setCutThreshold(Math.min(0.536, maxDist));
     }
   }, []);
 

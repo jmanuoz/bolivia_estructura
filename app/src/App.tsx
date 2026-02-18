@@ -2,11 +2,14 @@ import { useState, useCallback, useEffect } from 'react';
 import { DendrogramVisualizer } from '@/components/DendrogramVisualizer';
 import { NodeDetails } from '@/components/NodeDetails';
 import { Controls } from '@/components/Controls';
+import { ClusterHeatmaps } from '@/components/ClusterHeatmaps';
+import { OverlapRanking } from '@/components/OverlapRanking';
 import { useDendrogram } from '@/hooks/useDendrogram';
 import type { DendrogramData, TreeNode } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { GitBranch, Sparkles } from 'lucide-react';
+import { csvParseRows } from 'd3';
 
 const COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
@@ -15,6 +18,7 @@ const COLORS = [
 
 function App() {
   const {
+    data,
     treeData,
     cutThreshold,
     setCutThreshold,
@@ -30,6 +34,24 @@ function App() {
   const [hasData, setHasData] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
+  const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
+  const [pairwiseError, setPairwiseError] = useState<string | null>(null);
+
+  const parseScoreMatrix = useCallback((csvText: string): number[][] => {
+    const rows = csvParseRows(csvText);
+    return rows.slice(1).map((row) =>
+      row.slice(1).map((value) => {
+        const num = Number(value.trim());
+        return Number.isFinite(num) ? num : NaN;
+      })
+    );
+  }, []);
+
+  const parseExplanationMatrix = useCallback((csvText: string): string[][] => {
+    const rows = csvParseRows(csvText);
+    return rows.slice(1).map((row) => row.slice(1).map((value) => value.trim()));
+  }, []);
 
   const handleLoadData = useCallback((data: DendrogramData) => {
     loadData(data);
@@ -39,6 +61,7 @@ function App() {
   const loadLocalData = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
+    setPairwiseError(null);
     try {
       const dataUrl = new URL('../data/dendrogram_data.json', import.meta.url);
       const response = await fetch(dataUrl);
@@ -47,14 +70,43 @@ function App() {
       }
       const parsed = (await response.json()) as DendrogramData;
       handleLoadData(parsed);
+
+      try {
+        const scoresUrl = new URL('../data/scores.csv', import.meta.url);
+        const explanationsUrl = new URL('../data/explicaciones.csv', import.meta.url);
+
+        const [scoresResponse, explanationsResponse] = await Promise.all([
+          fetch(scoresUrl),
+          fetch(explanationsUrl)
+        ]);
+
+        if (!scoresResponse.ok || !explanationsResponse.ok) {
+          throw new Error('No se pudieron cargar scores.csv y/o explicaciones.csv');
+        }
+
+        const [scoresText, explanationsText] = await Promise.all([
+          scoresResponse.text(),
+          explanationsResponse.text()
+        ]);
+
+        setScoreMatrix(parseScoreMatrix(scoresText));
+        setExplanationMatrix(parseExplanationMatrix(explanationsText));
+      } catch (error) {
+        setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices CSV');
+        setScoreMatrix(null);
+        setExplanationMatrix(null);
+        toast.warning('No se pudieron cargar scores/explicaciones para el heatmap');
+      }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Error al cargar datos locales');
       setHasData(false);
+      setScoreMatrix(null);
+      setExplanationMatrix(null);
       toast.error('No se pudo cargar data/dendrogram_data.json');
     } finally {
       setIsLoading(false);
     }
-  }, [handleLoadData]);
+  }, [handleLoadData, parseScoreMatrix, parseExplanationMatrix]);
 
   useEffect(() => {
     loadLocalData();
@@ -75,7 +127,7 @@ function App() {
       <Toaster position="top-right" />
       
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="w-full py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -181,6 +233,21 @@ function App() {
                   </ul>
                 </div>
               </div>
+
+              <ClusterHeatmaps
+                root={treeData}
+                labels={data?.labels ?? []}
+                scoreMatrix={scoreMatrix}
+                explanationMatrix={explanationMatrix}
+                error={pairwiseError}
+              />
+
+              <OverlapRanking
+                root={treeData}
+                labels={data?.labels ?? []}
+                scoreMatrix={scoreMatrix}
+                explanationMatrix={explanationMatrix}
+              />
             </div>
           </div>
         )}
