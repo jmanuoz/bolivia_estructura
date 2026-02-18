@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Grid2X2, ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface GlobalHeatmapViewProps {
   labels: string[];
@@ -22,6 +23,12 @@ interface PairByScore {
     colLabel: string;
     explanation: string;
   }>;
+}
+
+interface ScoreSlice {
+  scoreText: string;
+  count: number;
+  fill: string;
 }
 
 interface HoveredCell {
@@ -131,6 +138,19 @@ export function GlobalHeatmapView({
   const selectedStat = useMemo(
     () => scoreStats.find((item) => item.scoreText === selectedScore) ?? null,
     [scoreStats, selectedScore]
+  );
+
+  const pieData = useMemo<ScoreSlice[]>(() => {
+    if (scoreStats.length === 0) return [];
+    return scoreStats.map((item) => ({
+      scoreText: item.scoreText,
+      count: item.count,
+      fill: getCellStyle(item.score).backgroundColor
+    }));
+  }, [scoreStats]);
+  const totalPairs = useMemo(
+    () => pieData.reduce((acc, item) => acc + item.count, 0),
+    [pieData]
   );
 
   const cellSize = clamp(Math.floor(2400 / Math.max(n, 1)), 10, 18);
@@ -311,6 +331,52 @@ export function GlobalHeatmapView({
           </div>
         </CardHeader>
         <CardContent className="pt-4 space-y-3">
+          <div className="rounded-md border border-slate-200 bg-white p-3">
+            <p className="text-sm font-medium text-slate-700 mb-2">Distribución de superposiciones por score</p>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="count"
+                    nameKey="scoreText"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={110}
+                    label={false}
+                    labelLine={false}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={`cell-${entry.scoreText}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => {
+                      const pct = totalPairs > 0 ? (value / totalPairs) * 100 : 0;
+                      return [`${value} pares (${pct.toFixed(1)}%)`, 'Cantidad'];
+                    }}
+                    labelFormatter={(scoreText) => `Score ${scoreText}`}
+                  />
+                  <Legend formatter={(value) => `Score ${value}`} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {pieData.map((item) => {
+                const pct = totalPairs > 0 ? (item.count / totalPairs) * 100 : 0;
+                return (
+                  <span
+                    key={`pct-${item.scoreText}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600"
+                  >
+                    <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: item.fill }} />
+                    {`Score ${item.scoreText}: ${pct.toFixed(1)}% (${item.count})`}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
           {selectedStat && (
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 max-h-72 overflow-auto">
               <p className="text-sm text-slate-700 mb-2">
