@@ -37,22 +37,27 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
+  const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
   const [pairwiseError, setPairwiseError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'principal' | 'heatmap-completo'>('principal');
 
-  const parseScoreMatrix = useCallback((csvText: string): number[][] => {
+  const parseScoreMatrix = useCallback((csvText: string): { labels: string[]; matrix: number[][] } => {
     const rows = csvParseRows(csvText);
-    return rows.slice(1).map((row) =>
+    const labels = (rows[0] ?? []).slice(1).map((value) => value.trim());
+    const matrix = rows.slice(1).map((row) =>
       row.slice(1).map((value) => {
         const num = Number(value.trim());
         return Number.isFinite(num) ? num : NaN;
       })
     );
+    return { labels, matrix };
   }, []);
 
-  const parseExplanationMatrix = useCallback((csvText: string): string[][] => {
+  const parseExplanationMatrix = useCallback((csvText: string): { labels: string[]; matrix: string[][] } => {
     const rows = csvParseRows(csvText);
-    return rows.slice(1).map((row) => row.slice(1).map((value) => value.trim()));
+    const labels = (rows[0] ?? []).slice(1).map((value) => value.trim());
+    const matrix = rows.slice(1).map((row) => row.slice(1).map((value) => value.trim()));
+    return { labels, matrix };
   }, []);
 
   const handleLoadData = useCallback((data: DendrogramData) => {
@@ -91,12 +96,24 @@ function App() {
           explanationsResponse.text()
         ]);
 
-        setScoreMatrix(parseScoreMatrix(scoresText));
-        setExplanationMatrix(parseExplanationMatrix(explanationsText));
+        const parsedScores = parseScoreMatrix(scoresText);
+        const parsedExplanations = parseExplanationMatrix(explanationsText);
+
+        setScoreMatrix(parsedScores.matrix);
+        setExplanationMatrix(parsedExplanations.matrix);
+        setPairwiseLabels(parsedScores.labels);
+
+        if (
+          parsedScores.labels.length !== parsedExplanations.labels.length ||
+          parsedScores.matrix.length !== parsedExplanations.matrix.length
+        ) {
+          toast.warning('Las matrices de scores y explicaciones tienen tamaños distintos.');
+        }
       } catch (error) {
         setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices CSV');
         setScoreMatrix(null);
         setExplanationMatrix(null);
+        setPairwiseLabels([]);
         toast.warning('No se pudieron cargar scores/explicaciones para el heatmap');
       }
     } catch (error) {
@@ -104,6 +121,7 @@ function App() {
       setHasData(false);
       setScoreMatrix(null);
       setExplanationMatrix(null);
+      setPairwiseLabels([]);
       toast.error('No se pudo cargar data/dendrogram_data.json');
     } finally {
       setIsLoading(false);
@@ -123,6 +141,8 @@ function App() {
   }, [handleNodeClick]);
 
   const maxThreshold = stats?.maxDistance || 1;
+
+  const overlapLabels = pairwiseLabels.length > 0 ? pairwiseLabels : (data?.labels ?? []);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -269,7 +289,7 @@ function App() {
 
               <ClusterHeatmaps
                 root={treeData}
-                labels={data?.labels ?? []}
+                labels={overlapLabels}
                 scoreMatrix={scoreMatrix}
                 explanationMatrix={explanationMatrix}
                 error={pairwiseError}
@@ -277,7 +297,7 @@ function App() {
 
               <OverlapRanking
                 root={treeData}
-                labels={data?.labels ?? []}
+                labels={overlapLabels}
                 scoreMatrix={scoreMatrix}
                 explanationMatrix={explanationMatrix}
               />
@@ -285,7 +305,7 @@ function App() {
               </>
             ) : (
               <GlobalHeatmapView
-                labels={data?.labels ?? []}
+                labels={overlapLabels}
                 scoreMatrix={scoreMatrix}
                 explanationMatrix={explanationMatrix}
                 error={pairwiseError}
