@@ -4,11 +4,12 @@ import { NodeDetails } from '@/components/NodeDetails';
 import { Controls } from '@/components/Controls';
 import { ClusterHeatmaps } from '@/components/ClusterHeatmaps';
 import { OverlapRanking } from '@/components/OverlapRanking';
+import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
 import { useDendrogram } from '@/hooks/useDendrogram';
 import type { DendrogramData, TreeNode } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { GitBranch, Sparkles } from 'lucide-react';
+import { GitBranch, LayoutDashboard, Sparkles, Table2 } from 'lucide-react';
 import { csvParseRows } from 'd3';
 
 const COLORS = [
@@ -37,6 +38,7 @@ function App() {
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseError, setPairwiseError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'principal' | 'heatmap-completo'>('principal');
 
   const parseScoreMatrix = useCallback((csvText: string): number[][] => {
     const rows = csvParseRows(csvText);
@@ -176,6 +178,37 @@ function App() {
           </div>
         ) : (
           <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveView('principal')}
+                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    activeView === 'principal'
+                      ? 'border-blue-300 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Vista principal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveView('heatmap-completo')}
+                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    activeView === 'heatmap-completo'
+                      ? 'border-blue-300 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Table2 className="w-4 h-4" />
+                  Heatmap completo
+                </button>
+              </div>
+            </div>
+
+            {activeView === 'principal' ? (
+              <>
             <div className="grid grid-cols-1 gap-4">
               <Controls
                 cutThreshold={cutThreshold}
@@ -249,6 +282,15 @@ function App() {
                 explanationMatrix={explanationMatrix}
               />
             </div>
+              </>
+            ) : (
+              <GlobalHeatmapView
+                labels={data?.labels ?? []}
+                scoreMatrix={scoreMatrix}
+                explanationMatrix={explanationMatrix}
+                error={pairwiseError}
+              />
+            )}
           </div>
         )}
       </main>
