@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Grid2X2, ListFilter } from 'lucide-react';
+import { ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -296,16 +296,6 @@ export function GlobalHeatmapView({
 
   return (
     <div className="space-y-4">
-      <div className="bg-gradient-to-r from-amber-50 via-white to-orange-50 rounded-xl shadow-sm border border-amber-100 p-4">
-        <h3 className="text-lg font-semibold text-slate-800 mb-1 flex items-center gap-2">
-          <Grid2X2 className="w-5 h-5 text-amber-700" />
-          Heatmap Completo de Unidades
-        </h3>
-        <p className="text-sm text-slate-600">
-          Matriz completa {n} x {n}. Incluye todas las unidades contra todas en un solo panel.
-        </p>
-      </div>
-
       <Card className="overflow-hidden border-slate-200 shadow-sm">
         <CardHeader className="pb-3 bg-slate-50/70 border-b border-slate-200">
           <CardTitle className="text-base flex items-center gap-2">
