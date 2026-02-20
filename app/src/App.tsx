@@ -6,6 +6,9 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { csvParseRows } from 'd3';
 
+const ROW_LABEL_COLUMN = 1;
+const FIRST_DATA_COLUMN = 2;
+
 function App() {
   const {
     data,
@@ -22,20 +25,37 @@ function App() {
 
   const parseScoreMatrix = useCallback((csvText: string): { labels: string[]; matrix: number[][] } => {
     const rows = csvParseRows(csvText);
-    const labels = (rows[0] ?? []).slice(1).map((value) => value.trim());
-    const matrix = rows.slice(1).map((row) =>
-      row.slice(1).map((value) => {
-        const num = Number(value.trim());
-        return Number.isFinite(num) ? num : NaN;
-      })
+    const labels = (rows[0] ?? []).slice(FIRST_DATA_COLUMN).map((value) => value.trim());
+    const dataRows = rows.slice(1);
+    const rowByLabel = new Map(
+      dataRows.map((row) => [row[ROW_LABEL_COLUMN]?.trim(), row.slice(FIRST_DATA_COLUMN)])
     );
+
+    const matrix = labels.map((label) => {
+      const rowValues = rowByLabel.get(label);
+      return labels.map((_, colIdx) => {
+        const rawValue = rowValues?.[colIdx]?.trim() ?? '';
+        const num = Number(rawValue);
+        return Number.isFinite(num) ? num : NaN;
+      });
+    });
+
     return { labels, matrix };
   }, []);
 
   const parseExplanationMatrix = useCallback((csvText: string): { labels: string[]; matrix: string[][] } => {
     const rows = csvParseRows(csvText);
-    const labels = (rows[0] ?? []).slice(1).map((value) => value.trim());
-    const matrix = rows.slice(1).map((row) => row.slice(1).map((value) => value.trim()));
+    const labels = (rows[0] ?? []).slice(FIRST_DATA_COLUMN).map((value) => value.trim());
+    const dataRows = rows.slice(1);
+    const rowByLabel = new Map(
+      dataRows.map((row) => [row[ROW_LABEL_COLUMN]?.trim(), row.slice(FIRST_DATA_COLUMN)])
+    );
+
+    const matrix = labels.map((label) => {
+      const rowValues = rowByLabel.get(label);
+      return labels.map((_, colIdx) => rowValues?.[colIdx]?.trim() ?? '');
+    });
+
     return { labels, matrix };
   }, []);
 
