@@ -51,6 +51,34 @@ function compactLabel(value: string, max = 46): string {
   return `${value.slice(0, max - 1)}…`;
 }
 
+const ENTERPRISE_KEYWORDS = [
+  'empresa',
+  'boliviana de aviación',
+  'boliviana de turismo',
+  'corporación minera de bolivia',
+  'mi teleférico',
+  'depósitos aduaneros bolivianos',
+  'yacimientos petrolíferos fiscales bolivianos',
+  'yacimientos de litio bolivianos',
+  'ecebol',
+  'quipus',
+  'enatex',
+  'cartonbol',
+  'kokabol',
+  'envibol',
+  'papelbol',
+  'azucarbol'
+];
+
+function isEnterpriseUnit(label: string): boolean {
+  const normalized = label.toLowerCase();
+  return ENTERPRISE_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function pairPriority(rowLabel: string, colLabel: string): number {
+  return isEnterpriseUnit(rowLabel) || isEnterpriseUnit(colLabel) ? 0 : 1;
+}
+
 function getContrastTextFromRgb(rgbString: string): string {
   const match = rgbString.match(/\d+(\.\d+)?/g);
   if (!match || match.length < 3) return '#0f172a';
@@ -121,7 +149,14 @@ export function GlobalHeatmapView({
       }
     }
 
-    return Array.from(groups.values()).sort((a, b) => b.score - a.score);
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        pairs: [...group.pairs].sort(
+          (a, b) => pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)
+        )
+      }))
+      .sort((a, b) => b.score - a.score);
   }, [scoreMatrix, explanationMatrix, labels, n]);
 
   useEffect(() => {
