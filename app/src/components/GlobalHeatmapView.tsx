@@ -42,6 +42,8 @@ interface HoveredCell {
   y: number;
 }
 
+const MAX_OVERLAP_SCORE = 5;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -159,30 +161,57 @@ export function GlobalHeatmapView({
       .sort((a, b) => b.score - a.score);
   }, [scoreMatrix, explanationMatrix, labels, n]);
 
+  const scoreStatsWithEmptyLevels = useMemo<PairByScore[]>(() => {
+    const byScore = new Map(scoreStats.map((item) => [item.scoreText, item]));
+    const fullRange: PairByScore[] = [];
+
+    for (let score = MAX_OVERLAP_SCORE; score >= 0; score--) {
+      const scoreText = score.toFixed(2);
+      const existing = byScore.get(scoreText);
+      fullRange.push(
+        existing ?? {
+          score,
+          scoreText,
+          count: 0,
+          pairs: []
+        }
+      );
+    }
+
+    return fullRange;
+  }, [scoreStats]);
+
   useEffect(() => {
-    if (scoreStats.length === 0) {
+    const withCases = scoreStatsWithEmptyLevels.filter((item) => item.count > 0);
+    if (withCases.length === 0) {
       setSelectedScore(null);
       return;
     }
     setSelectedScore((current) => {
-      if (!current) return scoreStats[0].scoreText;
-      return scoreStats.some((item) => item.scoreText === current) ? current : scoreStats[0].scoreText;
+      if (!current) return withCases[0].scoreText;
+      return scoreStatsWithEmptyLevels.some((item) => item.scoreText === current) ? current : withCases[0].scoreText;
     });
-  }, [scoreStats]);
+  }, [scoreStatsWithEmptyLevels]);
 
   const selectedStat = useMemo(
-    () => scoreStats.find((item) => item.scoreText === selectedScore) ?? null,
-    [scoreStats, selectedScore]
+    () => scoreStatsWithEmptyLevels.find((item) => item.scoreText === selectedScore) ?? null,
+    [scoreStatsWithEmptyLevels, selectedScore]
   );
 
   const pieData = useMemo<ScoreSlice[]>(() => {
-    if (scoreStats.length === 0) return [];
-    return scoreStats.map((item) => ({
+    const withCases = scoreStatsWithEmptyLevels.filter((item) => item.count > 0);
+    if (withCases.length === 0) return [];
+    return withCases.map((item) => ({
       scoreText: item.scoreText,
       count: item.count,
       fill: getCellStyle(item.score).backgroundColor
     }));
-  }, [scoreStats]);
+  }, [scoreStatsWithEmptyLevels]);
+
+  const maxLevelCount = useMemo(
+    () => scoreStatsWithEmptyLevels.find((item) => item.score === MAX_OVERLAP_SCORE)?.count ?? 0,
+    [scoreStatsWithEmptyLevels]
+  );
   const totalPairs = useMemo(
     () => pieData.reduce((acc, item) => acc + item.count, 0),
     [pieData]
@@ -338,7 +367,7 @@ export function GlobalHeatmapView({
             Estadísticas por score de superposición
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            {scoreStats.map((stat) => (
+            {scoreStatsWithEmptyLevels.map((stat) => (
               <button
                 key={stat.scoreText}
                 type="button"
@@ -354,6 +383,11 @@ export function GlobalHeatmapView({
               </button>
             ))}
           </div>
+          {maxLevelCount === 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              El nivel máximo (score 5.00) no tiene casos en este dataset.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="pt-4 space-y-3">
           <div className="rounded-md border border-slate-200 bg-white p-3">
