@@ -6,8 +6,54 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { csvParseRows } from 'd3';
 
-const ROW_LABEL_COLUMN = 1;
-const FIRST_DATA_COLUMN = 2;
+interface MatrixLayout {
+  labels: string[];
+  dataRows: string[][];
+  rowLabelColumn: number;
+  firstDataColumn: number;
+}
+
+const normalizeLabel = (value?: string) => value?.trim() ?? '';
+
+function detectMatrixLayout(rows: string[][]): MatrixLayout {
+  const header = rows[0] ?? [];
+  const dataRows = rows.slice(1).filter((row) => row.length > 0);
+
+  let rowLabelColumn = 0;
+  let firstDataColumn = header[0]?.trim() === '' ? 1 : 0;
+
+  const firstDataRow = dataRows[0];
+  if (firstDataRow) {
+    for (let colIdx = 0; colIdx < firstDataRow.length; colIdx++) {
+      const candidate = normalizeLabel(firstDataRow[colIdx]);
+      if (!candidate) continue;
+
+      const headerIdx = header.findIndex((value) => normalizeLabel(value) === candidate);
+      if (headerIdx >= 0) {
+        rowLabelColumn = colIdx;
+        firstDataColumn = headerIdx;
+        break;
+      }
+    }
+  }
+
+  const labels = header.slice(firstDataColumn).map(normalizeLabel);
+
+  return {
+    labels,
+    dataRows,
+    rowLabelColumn,
+    firstDataColumn
+  };
+}
+
+function parseScoreValue(rawValue?: string): number {
+  const raw = rawValue?.trim() ?? '';
+  if (!raw) return NaN;
+
+  const num = Number(raw.includes(',') ? raw.replace(',', '.') : raw);
+  return Number.isFinite(num) ? num : NaN;
+}
 
 function App() {
   const {
@@ -25,36 +71,54 @@ function App() {
 
   const parseScoreMatrix = useCallback((csvText: string): { labels: string[]; matrix: number[][] } => {
     const rows = csvParseRows(csvText);
-    const labels = (rows[0] ?? []).slice(FIRST_DATA_COLUMN).map((value) => value.trim());
-    const dataRows = rows.slice(1);
-    const rowByLabel = new Map(
-      dataRows.map((row) => [row[ROW_LABEL_COLUMN]?.trim(), row.slice(FIRST_DATA_COLUMN)])
-    );
+    const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
 
-    const matrix = labels.map((label) => {
-      const rowValues = rowByLabel.get(label);
-      return labels.map((_, colIdx) => {
-        const rawValue = rowValues?.[colIdx]?.trim() ?? '';
-        const num = Number(rawValue);
-        return Number.isFinite(num) ? num : NaN;
-      });
-    });
+    const isAlignedByOrder =
+      dataRows.length >= labels.length &&
+      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
+
+    const matrix = isAlignedByOrder
+      ? labels.map((_, rowIdx) => {
+          const row = dataRows[rowIdx] ?? [];
+          return labels.map((__, colIdx) => parseScoreValue(row[firstDataColumn + colIdx]));
+        })
+      : (() => {
+          const rowByLabel = new Map(
+            dataRows.map((row) => [normalizeLabel(row[rowLabelColumn]), row])
+          );
+
+          return labels.map((label) => {
+            const rowValues = rowByLabel.get(label);
+            return labels.map((_, colIdx) => parseScoreValue(rowValues?.[firstDataColumn + colIdx]));
+          });
+        })();
 
     return { labels, matrix };
   }, []);
 
   const parseExplanationMatrix = useCallback((csvText: string): { labels: string[]; matrix: string[][] } => {
     const rows = csvParseRows(csvText);
-    const labels = (rows[0] ?? []).slice(FIRST_DATA_COLUMN).map((value) => value.trim());
-    const dataRows = rows.slice(1);
-    const rowByLabel = new Map(
-      dataRows.map((row) => [row[ROW_LABEL_COLUMN]?.trim(), row.slice(FIRST_DATA_COLUMN)])
-    );
+    const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
 
-    const matrix = labels.map((label) => {
-      const rowValues = rowByLabel.get(label);
-      return labels.map((_, colIdx) => rowValues?.[colIdx]?.trim() ?? '');
-    });
+    const isAlignedByOrder =
+      dataRows.length >= labels.length &&
+      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
+
+    const matrix = isAlignedByOrder
+      ? labels.map((_, rowIdx) => {
+          const row = dataRows[rowIdx] ?? [];
+          return labels.map((__, colIdx) => row[firstDataColumn + colIdx] ?? '');
+        })
+      : (() => {
+          const rowByLabel = new Map(
+            dataRows.map((row) => [normalizeLabel(row[rowLabelColumn]), row])
+          );
+
+          return labels.map((label) => {
+            const rowValues = rowByLabel.get(label);
+            return labels.map((_, colIdx) => rowValues?.[firstDataColumn + colIdx] ?? '');
+          });
+        })();
 
     return { labels, matrix };
   }, []);
