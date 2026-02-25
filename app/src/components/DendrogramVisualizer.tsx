@@ -16,6 +16,9 @@ const COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
 ];
+const LEAF_RADIUS = 4;
+const INTERNAL_RADIUS = 3;
+const MIN_VERTICAL_GAP_PX = 12;
 
 export function DendrogramVisualizer({
   root,
@@ -86,7 +89,10 @@ export function DendrogramVisualizer({
       .domain([0, leafCount - 1])
       .range([0, innerWidth]);
 
-    const yScale = d3.scaleLinear()
+    // Con datasets con muchas distancias cercanas a 0, una escala lineal aplasta
+    // las ramas bajas y aparenta nodos "sueltos". Symlog preserva orden y las separa.
+    const yScale = d3.scaleSymlog()
+      .constant(Math.max(maxDistance / 120, 0.001))
       .domain([0, maxDistance])
       .range([innerHeight, 0]);
 
@@ -102,8 +108,13 @@ export function DendrogramVisualizer({
       node.children.forEach(assignXPositions);
       // Posición X es el promedio de hijos
       const childXs = node.children.map(c => c.x!);
+      const childYs = node.children.map(c => c.y!);
+      const rawY = yScale(node.distance);
+      const minChildY = Math.min(...childYs);
+      // El padre siempre debe quedar por encima (menor y en SVG) de ambos hijos.
+      const separatedY = Math.min(rawY, minChildY - MIN_VERTICAL_GAP_PX);
       node.x = d3.mean(childXs) || 0;
-      node.y = yScale(node.distance);
+      node.y = Math.max(0, separatedY);
     }
     assignXPositions(root);
 
@@ -178,7 +189,7 @@ export function DendrogramVisualizer({
       g.append('circle')
         .attr('cx', node.x!)
         .attr('cy', node.y!)
-        .attr('r', isLeaf ? 6 : 4)
+        .attr('r', isLeaf ? LEAF_RADIUS : INTERNAL_RADIUS)
         .attr('fill', isLeaf ? color : '#fff')
         .attr('stroke', color)
         .attr('stroke-width', isHighlighted ? 3 : 2)
@@ -215,7 +226,7 @@ export function DendrogramVisualizer({
     // Eje Y (distancia)
     const yAxis = d3.axisLeft(yScale)
       .ticks(8)
-      .tickFormat(d => d.toString());
+      .tickFormat((d) => Number(d).toFixed(2));
 
     g.append('g')
       .attr('class', 'y-axis')

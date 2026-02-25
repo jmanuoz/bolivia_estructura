@@ -11,6 +11,7 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import type { TreeNode } from '@/types/dendrogram';
+import { getPairLabelsFromExplanation } from '@/lib/explanation';
 
 interface ClusterHeatmapsProps {
   root: TreeNode | null;
@@ -326,6 +327,14 @@ export function ClusterHeatmaps({
   };
 
   const explanationCell = selectedCell ?? hoveredCell;
+  const explanationPair = explanationCell
+    ? getPairLabelsFromExplanation(
+        explanationCell.rowLabel,
+        explanationCell.colLabel,
+        explanationCell.explanation,
+        labels
+      )
+    : null;
 
   return (
     <div className="space-y-4">
@@ -424,7 +433,8 @@ export function ClusterHeatmaps({
               </div>
               {explanationCell ? (
                 <p className="text-sm text-slate-700">
-                  <strong>{explanationCell.rowLabel}</strong> vs <strong>{explanationCell.colLabel}</strong>
+                  <strong>{explanationPair?.rowLabel ?? explanationCell.rowLabel}</strong> vs{' '}
+                  <strong>{explanationPair?.colLabel ?? explanationCell.colLabel}</strong>
                   {' '}| score: <strong>{explanationCell.scoreText}</strong>
                   {' '}| {explanationCell.explanation}
                 </p>
@@ -448,6 +458,14 @@ export function ClusterHeatmaps({
                   />
 
                   {hoveredCell && (
+                    (() => {
+                      const hoveredPair = getPairLabelsFromExplanation(
+                        hoveredCell.rowLabel,
+                        hoveredCell.colLabel,
+                        hoveredCell.explanation,
+                        labels
+                      );
+                      return (
                     <div
                       className="pointer-events-none absolute z-20 max-w-[420px] rounded-md border border-slate-200 bg-white p-2.5 shadow-lg text-xs"
                       style={{
@@ -456,11 +474,13 @@ export function ClusterHeatmaps({
                       }}
                     >
                       <p className="font-semibold text-slate-800">
-                        {hoveredCell.rowLabel} vs {hoveredCell.colLabel}
+                        {hoveredPair.rowLabel} vs {hoveredPair.colLabel}
                       </p>
                       <p className="text-slate-600 mt-1">Score: {hoveredCell.scoreText}</p>
                       <p className="text-slate-600 mt-1">{hoveredCell.explanation}</p>
                     </div>
+                      );
+                    })()
                   )}
                 </div>
               </div>

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BarChart3, ListOrdered } from 'lucide-react';
 import type { TreeNode } from '@/types/dendrogram';
+import { getPairLabelsFromExplanation } from '@/lib/explanation';
 
 interface OverlapRankingProps {
   root: TreeNode | null;
@@ -141,6 +142,16 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
     return explanationMatrix[selectedUnitIdx]?.[selectedPeerIdx] || 'Sin explicación disponible.';
   }, [explanationMatrix, selectedUnitIdx, selectedPeerIdx]);
 
+  const explanationPairLabels = useMemo(() => {
+    if (!selectedItem || !selectedPeer) return null;
+    return getPairLabelsFromExplanation(
+      selectedItem.label,
+      selectedPeer.label,
+      selectedPeerExplanation ?? '',
+      labels
+    );
+  }, [selectedItem, selectedPeer, selectedPeerExplanation, labels]);
+
   if (!scoreMatrix || ranking.length === 0) {
     return null;
   }
@@ -238,7 +249,8 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
                   Justificación del score
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  {compactLabel(selectedItem?.label ?? '', 90)} vs {compactLabel(selectedPeer.label, 90)}
+                  {compactLabel(explanationPairLabels?.rowLabel ?? selectedItem?.label ?? '', 90)} vs{' '}
+                  {compactLabel(explanationPairLabels?.colLabel ?? selectedPeer.label, 90)}
                 </p>
                 <p className="text-sm text-slate-700 mt-2">
                   {selectedPeerExplanation ?? 'Sin explicación disponible.'}

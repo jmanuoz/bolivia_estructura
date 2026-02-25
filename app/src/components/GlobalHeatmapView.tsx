@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { getPairLabelsFromExplanation } from '@/lib/explanation';
 
 interface GlobalHeatmapViewProps {
   labels: string[];
@@ -448,8 +449,20 @@ export function GlobalHeatmapView({
                     className="rounded-md border border-slate-200 bg-white px-3 py-2"
                   >
                     <p className="text-sm text-slate-700">
-                      {compactLabel(pair.rowLabel, 120)} <span className="text-slate-400">vs</span>{' '}
-                      {compactLabel(pair.colLabel, 120)}
+                      {(() => {
+                        const pairLabels = getPairLabelsFromExplanation(
+                          pair.rowLabel,
+                          pair.colLabel,
+                          pair.explanation,
+                          labels
+                        );
+                        return (
+                          <>
+                            {compactLabel(pairLabels.rowLabel, 120)} <span className="text-slate-400">vs</span>{' '}
+                            {compactLabel(pairLabels.colLabel, 120)}
+                          </>
+                        );
+                      })()}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">{pair.explanation}</p>
                   </div>
@@ -478,7 +491,15 @@ export function GlobalHeatmapView({
                     }}
                   >
                     <p className="font-semibold text-slate-800">
-                      {hoveredCell.rowLabel} vs {hoveredCell.colLabel}
+                      {(() => {
+                        const hoveredLabels = getPairLabelsFromExplanation(
+                          hoveredCell.rowLabel,
+                          hoveredCell.colLabel,
+                          hoveredCell.explanation,
+                          labels
+                        );
+                        return `${hoveredLabels.rowLabel} vs ${hoveredLabels.colLabel}`;
+                      })()}
                     </p>
                     <p className="text-slate-600 mt-1">Score: {hoveredCell.scoreText}</p>
                     <p className="text-slate-600 mt-1">{hoveredCell.explanation}</p>
