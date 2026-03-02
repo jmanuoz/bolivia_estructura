@@ -6,7 +6,7 @@ import { useDendrogram } from '@/hooks/useDendrogram';
 import type { DendrogramData } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { csvParseRows } from 'd3';
+import { csvParse, csvParseRows } from 'd3';
 import { buildScoreGraph } from '@/lib/scoreGraph';
 
 interface MatrixLayout {
@@ -70,6 +70,26 @@ function parseScoreValue(rawValue?: string): number {
   return Number.isFinite(num) ? num : NaN;
 }
 
+function alignContentsByLabels(
+  sourceRows: Array<{ nombre?: string; ['Función']?: string }>,
+  targetLabels: string[],
+  fallbackContents?: string[]
+): string[] {
+  const contentByLabel = new Map<string, string>();
+
+  for (const row of sourceRows) {
+    const normalizedName = normalizeLabel(row.nombre);
+    const content = row['Función']?.trim() ?? '';
+    if (!normalizedName || !content) continue;
+    contentByLabel.set(normalizedName, content);
+  }
+
+  return targetLabels.map((label, idx) => {
+    const normalizedLabel = normalizeLabel(label);
+    return contentByLabel.get(normalizedLabel) ?? fallbackContents?.[idx] ?? '';
+  });
+}
+
 function alignNumericMatrixByLabels(
   sourceLabels: string[],
   sourceMatrix: number[][],
@@ -121,6 +141,7 @@ function App() {
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
+  const [unitContents, setUnitContents] = useState<string[]>([]);
   const [pairwiseError, setPairwiseError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'grafo' | 'heatmaps'>('grafo');
   const [loginUser, setLoginUser] = useState('');
@@ -206,23 +227,27 @@ function App() {
       try {
         const scoresUrl = new URL('../data/scores.csv', import.meta.url);
         const explanationsUrl = new URL('../data/explicaciones.csv', import.meta.url);
+        const contentsUrl = new URL('../data/datosTotales.csv', import.meta.url);
 
-        const [scoresResponse, explanationsResponse] = await Promise.all([
+        const [scoresResponse, explanationsResponse, contentsResponse] = await Promise.all([
           fetch(scoresUrl),
-          fetch(explanationsUrl)
+          fetch(explanationsUrl),
+          fetch(contentsUrl)
         ]);
 
-        if (!scoresResponse.ok || !explanationsResponse.ok) {
-          throw new Error('No se pudieron cargar scores.csv y/o explicaciones.csv');
+        if (!scoresResponse.ok || !explanationsResponse.ok || !contentsResponse.ok) {
+          throw new Error('No se pudieron cargar scores.csv, explicaciones.csv y/o datosTotales.csv');
         }
 
-        const [scoresText, explanationsText] = await Promise.all([
+        const [scoresText, explanationsText, contentsText] = await Promise.all([
           scoresResponse.text(),
-          explanationsResponse.text()
+          explanationsResponse.text(),
+          contentsResponse.text()
         ]);
 
         const parsedScores = parseScoreMatrix(scoresText);
         const parsedExplanations = parseExplanationMatrix(explanationsText);
+        const parsedContents = csvParse(contentsText) as Array<{ nombre?: string; ['Función']?: string }>;
         const canonicalLabels = parsed.labels.map((label) => label.trim());
 
         const alignedScores = alignNumericMatrixByLabels(
@@ -239,6 +264,7 @@ function App() {
         setScoreMatrix(alignedScores);
         setExplanationMatrix(alignedExplanations);
         setPairwiseLabels(canonicalLabels);
+        setUnitContents(alignContentsByLabels(parsedContents, canonicalLabels, parsed.contents));
 
         const scoreLabelSet = new Set(parsedScores.labels.map(normalizeLabel));
         const explanationLabelSet = new Set(parsedExplanations.labels.map(normalizeLabel));
@@ -252,6 +278,7 @@ function App() {
         setScoreMatrix(null);
         setExplanationMatrix(null);
         setPairwiseLabels([]);
+        setUnitContents([]);
         toast.warning('No se pudieron cargar scores/explicaciones para el heatmap');
       }
     } catch (error) {
@@ -260,6 +287,7 @@ function App() {
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
+      setUnitContents([]);
       toast.error('No se pudo cargar data/dendrogram_data.json');
     } finally {
       setIsLoading(false);
@@ -272,8 +300,8 @@ function App() {
 
   const overlapLabels = pairwiseLabels.length > 0 ? pairwiseLabels : (data?.labels ?? []);
   const graphAnalysis = useMemo(
-    () => buildScoreGraph(overlapLabels, scoreMatrix, data?.contents, 4),
-    [overlapLabels, scoreMatrix, data?.contents]
+    () => buildScoreGraph(overlapLabels, scoreMatrix, unitContents.length > 0 ? unitContents : data?.contents, 4),
+    [overlapLabels, scoreMatrix, unitContents, data?.contents]
   );
 
   const handleLogin = useCallback((event: React.FormEvent<HTMLFormElement>) => {
@@ -436,7 +464,7 @@ function App() {
               <div className="space-y-6">
                 <ScoreGraphView
                   labels={overlapLabels}
-                  contents={data?.contents}
+                  contents={unitContents.length > 0 ? unitContents : data?.contents}
                   scoreMatrix={scoreMatrix}
                   error={pairwiseError}
                 />

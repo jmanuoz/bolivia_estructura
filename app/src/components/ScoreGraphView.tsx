@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Network, Link2, Users, Component, FileText } from 'lucide-react';
 import { buildScoreGraph } from '@/lib/scoreGraph';
+import { runLouvainForLargeCluster } from '@/lib/louvain';
 
 interface ScoreGraphViewProps {
   labels: string[];
@@ -33,18 +34,14 @@ interface ZoomState {
   k: number;
 }
 
-const CLUSTER_COLORS = [
-  '#0f766e',
-  '#b45309',
-  '#1d4ed8',
-  '#be123c',
-  '#6d28d9',
-  '#047857',
-  '#c2410c',
-  '#4338ca',
-  '#a21caf',
-  '#0f766e'
-];
+interface VisualGroup {
+  key: string;
+  title: string;
+  nodeIds: number[];
+  edgeCount: number;
+  averageScore: number;
+  colorIndex: number;
+}
 
 function compactLabel(value: string, max = 34): string {
   if (value.length <= max) return value;
@@ -52,7 +49,10 @@ function compactLabel(value: string, max = 34): string {
 }
 
 function getClusterColor(clusterId: number): string {
-  return CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+  const hue = (clusterId * 137.508) % 360;
+  const saturation = 62 + (clusterId % 3) * 6;
+  const lightness = 40 + (clusterId % 4) * 5;
+  return `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
 }
 
 export function ScoreGraphView({
@@ -67,11 +67,69 @@ export function ScoreGraphView({
     () => buildScoreGraph(labels, scoreMatrix, contents, threshold),
     [labels, scoreMatrix, contents, threshold]
   );
+  const louvainResult = useMemo(
+    () => runLouvainForLargeCluster(analysis, 10),
+    [analysis]
+  );
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
-  const [selectedClusterId, setSelectedClusterId] = useState<number | null>(0);
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<number | null>(null);
   const [zoomState, setZoomState] = useState<ZoomState>({ x: 0, y: 0, k: 1 });
+
+  const visualGroups = useMemo<VisualGroup[]>(() => {
+    if (!analysis) return [];
+
+    const groups: VisualGroup[] = [];
+    let colorIndex = 0;
+
+    for (const cluster of analysis.clusters) {
+      if (louvainResult && cluster.id === louvainResult.targetClusterId && louvainResult.communities.length > 1) {
+        for (const community of louvainResult.communities) {
+          groups.push({
+            key: `community-${cluster.id}-${community.id}`,
+            title: `Cluster ${cluster.id + 1} · Comunidad ${community.id + 1}`,
+            nodeIds: community.nodeIds,
+            edgeCount: community.edgeCount,
+            averageScore: community.averageWeight,
+            colorIndex: colorIndex++
+          });
+        }
+      } else {
+        groups.push({
+          key: `cluster-${cluster.id}`,
+          title: `Cluster ${cluster.id + 1}`,
+          nodeIds: cluster.nodeIds,
+          edgeCount: cluster.edgeCount,
+          averageScore: cluster.averageScore,
+          colorIndex: colorIndex++
+        });
+      }
+    }
+
+    return groups;
+  }, [analysis, louvainResult]);
+
+  const visualGroupByNode = useMemo(() => {
+    const map = new Map<number, VisualGroup>();
+    for (const group of visualGroups) {
+      for (const nodeId of group.nodeIds) {
+        map.set(nodeId, group);
+      }
+    }
+    return map;
+  }, [visualGroups]);
+
+  useEffect(() => {
+    if (visualGroups.length === 0) {
+      setSelectedGroupKey(null);
+      return;
+    }
+
+    setSelectedGroupKey((current) =>
+      current && visualGroups.some((group) => group.key === current) ? current : visualGroups[0].key
+    );
+  }, [visualGroups]);
 
   const layout = useMemo(() => {
     if (!analysis) return null;
@@ -175,11 +233,10 @@ export function ScoreGraphView({
     [analysis, hoveredNodeId]
   );
 
-  const selectedCluster = useMemo(() => {
-    if (!analysis) return null;
-    const clusterId = selectedClusterId ?? 0;
-    return analysis.clusters.find((cluster) => cluster.id === clusterId) ?? analysis.clusters[0] ?? null;
-  }, [analysis, selectedClusterId]);
+  const selectedGroup = useMemo(
+    () => visualGroups.find((group) => group.key === selectedGroupKey) ?? visualGroups[0] ?? null,
+    [visualGroups, selectedGroupKey]
+  );
 
   if (!scoreMatrix || !analysis || !layout || analysis.nodes.length === 0) {
     return (
@@ -235,8 +292,8 @@ export function ScoreGraphView({
                 <Component className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm text-slate-500">Clusters del grafo</p>
-                <p className="text-2xl font-semibold text-slate-900">{analysis.clusters.length}</p>
+                <p className="text-sm text-slate-500">Clusters visibles</p>
+                <p className="text-2xl font-semibold text-slate-900">{visualGroups.length}</p>
               </div>
             </div>
           </CardContent>
@@ -257,133 +314,95 @@ export function ScoreGraphView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(360px,0.9fr)] gap-6">
-        <Card className="border-slate-200 shadow-sm overflow-hidden">
-          <CardHeader className="bg-slate-50/70 border-b border-slate-200 pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Network className="w-4 h-4 text-slate-700" />
-              Red de superposición fuerte
-            </CardTitle>
-            <p className="text-sm text-slate-500">
-              Cada arista representa una relación con score mayor o igual a {threshold.toFixed(0)}.
-            </p>
-          </CardHeader>
-          <CardContent className="px-2 py-2">
-            <div className="overflow-auto rounded-lg border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc,transparent_65%),linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]">
-              <svg
-                ref={svgRef}
-                viewBox={`0 0 ${layout.width} ${layout.height}`}
-                className="h-[780px] min-w-[1100px] w-full touch-none"
-                role="img"
-                aria-label="Grafo de unidades conectadas por score de superposición mayor o igual a 4"
-              >
-                <g transform={`translate(${zoomState.x}, ${zoomState.y}) scale(${zoomState.k})`}>
-                  {layout.edges.map((edge) => {
-                    const highlighted =
-                      edge.source.id === selectedNodeId ||
-                      edge.target.id === selectedNodeId ||
-                      edge.source.id === hoveredNodeId ||
-                      edge.target.id === hoveredNodeId;
-
-                    return (
-                      <line
-                        key={`${edge.source.id}-${edge.target.id}`}
-                        x1={edge.source.x ?? 0}
-                        y1={edge.source.y ?? 0}
-                        x2={edge.target.x ?? 0}
-                        y2={edge.target.y ?? 0}
-                        stroke={highlighted ? '#475569' : '#64748b'}
-                        strokeOpacity={highlighted ? 0.88 : 0.58}
-                        strokeWidth={highlighted ? 2.6 : 1.4 + Math.max(0.6, (edge.score - threshold) * 0.9)}
-                      />
-                    );
-                  })}
-
-                  {layout.nodes.map((node) => {
-                    const selected = node.id === selectedNodeId;
-                    const hovered = node.id === hoveredNodeId;
-                    const color = getClusterColor(node.clusterId);
-                    const radius = 6 + Math.min(8, node.degree * 1.05);
-                    const showLabel = selected || hovered || zoomState.k >= 1.6;
-
-                    return (
-                      <g
-                        key={node.id}
-                        transform={`translate(${node.x ?? 0}, ${node.y ?? 0})`}
-                        className="cursor-pointer"
-                        onClick={() => {
-                          setSelectedNodeId(node.id);
-                          setSelectedClusterId(node.clusterId);
-                        }}
-                        onMouseEnter={() => setHoveredNodeId(node.id)}
-                        onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
-                      >
-                        <circle
-                          r={radius + (selected ? 3 : hovered ? 1.5 : 0)}
-                          fill={color}
-                          fillOpacity={selected ? 0.98 : 0.9}
-                          stroke={selected ? '#0f172a' : hovered ? '#334155' : '#ffffff'}
-                          strokeWidth={selected ? 2.5 : hovered ? 2 : 1.1}
-                        />
-                        {showLabel ? (
-                          <text
-                            y={radius + 14}
-                            textAnchor="middle"
-                            fontSize="10"
-                            fontWeight={selected ? '700' : '500'}
-                            fill="#334155"
-                          >
-                            {compactLabel(node.label, 18)}
-                          </text>
-                        ) : null}
-                      </g>
-                    );
-                  })}
-                </g>
-              </svg>
-            </div>
-            <div className="px-4 pb-4 text-xs text-slate-500">
-              Usa rueda para zoom y arrastra para recorrer el grafo.
-            </div>
-          </CardContent>
-        </Card>
-
         <div className="space-y-6">
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Clusters detectados</CardTitle>
+          <Card className="border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50/70 border-b border-slate-200 pb-4">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Network className="w-4 h-4 text-slate-700" />
+                Red de superposición fuerte
+              </CardTitle>
+              <p className="text-sm text-slate-500">
+                Cada arista representa una relación con score mayor o igual a {threshold.toFixed(0)}.
+              </p>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {analysis.clusters.map((cluster) => {
-                const isActive = cluster.id === (selectedCluster?.id ?? 0);
-                return (
-                  <button
-                    key={cluster.id}
-                    type="button"
-                    onClick={() => setSelectedClusterId(cluster.id)}
-                    className={`w-full rounded-lg border px-3 py-3 text-left transition-colors ${
-                      isActive ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-3 w-3 rounded-full"
-                            style={{ backgroundColor: getClusterColor(cluster.id) }}
+            <CardContent className="px-2 py-2">
+              <div className="overflow-auto rounded-lg border border-slate-200 bg-[radial-gradient(circle_at_top,#f8fafc,transparent_65%),linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]">
+                <svg
+                  ref={svgRef}
+                  viewBox={`0 0 ${layout.width} ${layout.height}`}
+                  className="h-[780px] min-w-[1100px] w-full touch-none"
+                  role="img"
+                  aria-label="Grafo de unidades conectadas por score de superposición mayor o igual a 4"
+                >
+                  <g transform={`translate(${zoomState.x}, ${zoomState.y}) scale(${zoomState.k})`}>
+                    {layout.edges.map((edge) => {
+                      const highlighted =
+                        edge.source.id === selectedNodeId ||
+                        edge.target.id === selectedNodeId ||
+                        edge.source.id === hoveredNodeId ||
+                        edge.target.id === hoveredNodeId;
+
+                      return (
+                        <line
+                          key={`${edge.source.id}-${edge.target.id}`}
+                          x1={edge.source.x ?? 0}
+                          y1={edge.source.y ?? 0}
+                          x2={edge.target.x ?? 0}
+                          y2={edge.target.y ?? 0}
+                          stroke={highlighted ? '#475569' : '#64748b'}
+                          strokeOpacity={highlighted ? 0.88 : 0.58}
+                          strokeWidth={highlighted ? 2.6 : 1.4 + Math.max(0.6, (edge.score - threshold) * 0.9)}
+                        />
+                      );
+                    })}
+
+                    {layout.nodes.map((node) => {
+                      const selected = node.id === selectedNodeId;
+                      const hovered = node.id === hoveredNodeId;
+                      const visualGroup = visualGroupByNode.get(node.id);
+                      const color = getClusterColor(visualGroup?.colorIndex ?? node.clusterId);
+                      const radius = 6 + Math.min(8, node.degree * 1.05);
+                      const showLabel = selected || hovered || zoomState.k >= 1.6;
+
+                      return (
+                        <g
+                          key={node.id}
+                          transform={`translate(${node.x ?? 0}, ${node.y ?? 0})`}
+                          className="cursor-pointer"
+                          onClick={() => {
+                            setSelectedNodeId(node.id);
+                            setSelectedGroupKey(visualGroup?.key ?? null);
+                          }}
+                          onMouseEnter={() => setHoveredNodeId(node.id)}
+                          onMouseLeave={() => setHoveredNodeId((current) => (current === node.id ? null : current))}
+                        >
+                          <circle
+                            r={radius + (selected ? 3 : hovered ? 1.5 : 0)}
+                            fill={color}
+                            fillOpacity={selected ? 0.98 : 0.9}
+                            stroke={selected ? '#0f172a' : hovered ? '#334155' : '#ffffff'}
+                            strokeWidth={selected ? 2.5 : hovered ? 2 : 1.1}
                           />
-                          <p className="text-sm font-semibold text-slate-800">Cluster {cluster.id + 1}</p>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {cluster.nodeIds.length} unidades, {cluster.edgeCount} aristas internas
-                        </p>
-                      </div>
-                      <Badge variant="outline" className="font-mono">
-                        {cluster.averageScore > 0 ? cluster.averageScore.toFixed(2) : 'sin lazos'}
-                      </Badge>
-                    </div>
-                  </button>
-                );
-              })}
+                          {showLabel ? (
+                            <text
+                              y={radius + 14}
+                              textAnchor="middle"
+                              fontSize="10"
+                              fontWeight={selected ? '700' : '500'}
+                              fill="#334155"
+                            >
+                              {compactLabel(node.label, 18)}
+                            </text>
+                          ) : null}
+                        </g>
+                      );
+                    })}
+                  </g>
+                </svg>
+              </div>
+              <div className="px-4 pb-4 text-xs text-slate-500">
+                Usa rueda para zoom y arrastra para recorrer el grafo.
+              </div>
             </CardContent>
           </Card>
 
@@ -392,35 +411,35 @@ export function ScoreGraphView({
               <CardTitle className="text-base">Detalle del cluster</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {selectedCluster ? (
+              {selectedGroup ? (
                 <>
                   <div className="flex items-center gap-2">
                     <span
                       className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: getClusterColor(selectedCluster.id) }}
+                      style={{ backgroundColor: getClusterColor(selectedGroup.colorIndex) }}
                     />
-                    <p className="text-sm font-semibold text-slate-800">Cluster {selectedCluster.id + 1}</p>
+                    <p className="text-sm font-semibold text-slate-800">{selectedGroup.title}</p>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-md bg-slate-50 p-2">
                       <p className="text-xs text-slate-500">Unidades</p>
-                      <p className="text-lg font-semibold text-slate-800">{selectedCluster.nodeIds.length}</p>
+                      <p className="text-lg font-semibold text-slate-800">{selectedGroup.nodeIds.length}</p>
                     </div>
                     <div className="rounded-md bg-slate-50 p-2">
                       <p className="text-xs text-slate-500">Aristas</p>
-                      <p className="text-lg font-semibold text-slate-800">{selectedCluster.edgeCount}</p>
+                      <p className="text-lg font-semibold text-slate-800">{selectedGroup.edgeCount}</p>
                     </div>
                     <div className="rounded-md bg-slate-50 p-2">
-                      <p className="text-xs text-slate-500">Score máx.</p>
-                      <p className="text-lg font-semibold text-slate-800">{selectedCluster.maxScore.toFixed(2)}</p>
+                      <p className="text-xs text-slate-500">Score medio</p>
+                      <p className="text-lg font-semibold text-slate-800">{selectedGroup.averageScore.toFixed(2)}</p>
                     </div>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Unidades del cluster
+                      Unidades del grupo
                     </p>
-                    <div className="space-y-1.5">
-                      {selectedCluster.nodeIds.map((nodeId) => {
+                    <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
+                      {selectedGroup.nodeIds.map((nodeId) => {
                         const node = analysis.nodes[nodeId];
                         if (!node) return null;
                         return (
@@ -432,16 +451,108 @@ export function ScoreGraphView({
                               selectedNodeId === nodeId ? 'bg-white text-slate-900' : 'text-slate-700 hover:bg-white'
                             }`}
                           >
-                            {node.label}
+                            <span>{node.label}</span>
+                            {louvainResult?.communityByNode.has(nodeId) ? (
+                              <span className="ml-2 text-xs text-slate-500">
+                                C{(louvainResult.communityByNode.get(nodeId) ?? 0) + 1}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}
                     </div>
                   </div>
+                  {louvainResult?.communities.length ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Comunidades Louvain
+                      </p>
+                      <div className="max-h-52 space-y-2 overflow-auto pr-1">
+                        {louvainResult.communities.map((community) => (
+                          <div
+                            key={community.id}
+                            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-slate-800">
+                                Comunidad {community.id + 1}
+                              </p>
+                              <Badge variant="outline" className="font-mono">
+                                {community.nodeIds.length} nodos
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {community.edgeCount} aristas internas, score medio {community.averageWeight.toFixed(2)}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-700">
+                              {community.nodeIds
+                                .slice(0, 6)
+                                .map((nodeId) => analysis.nodes.find((node) => node.id === nodeId)?.label ?? `Unidad ${nodeId}`)
+                                .join(' · ')}
+                              {community.nodeIds.length > 6 ? ' · ...' : ''}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="text-sm text-slate-500">No hay clusters disponibles.</p>
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6 xl:sticky xl:top-24 self-start">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Clusters detectados</CardTitle>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Selecciona un grupo. La lista tiene scroll propio para no desplazar el detalle.
+                  </p>
+                </div>
+                <Badge variant="outline" className="font-mono">
+                  {visualGroups.length}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                {visualGroups.map((group) => {
+                  const isActive = group.key === selectedGroup?.key;
+                  return (
+                    <button
+                      key={group.key}
+                      type="button"
+                      onClick={() => setSelectedGroupKey(group.key)}
+                      className={`w-full rounded-lg border px-3 py-3 text-left transition-colors ${
+                        isActive ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-3 w-3 rounded-full"
+                              style={{ backgroundColor: getClusterColor(group.colorIndex) }}
+                            />
+                            <p className="text-sm font-semibold text-slate-800">{group.title}</p>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {group.nodeIds.length} unidades, {group.edgeCount} aristas internas
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="font-mono">
+                          {group.averageScore > 0 ? group.averageScore.toFixed(2) : 'sin lazos'}
+                        </Badge>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
 
@@ -465,7 +576,7 @@ export function ScoreGraphView({
                     <div className="rounded-md bg-slate-50 p-2">
                       <p className="text-xs text-slate-500">Cluster</p>
                       <p className="text-lg font-semibold text-slate-800">
-                        {((selectedNode ?? hoveredNode)?.clusterId ?? 0) + 1}
+                        {visualGroupByNode.get((selectedNode ?? hoveredNode)?.id ?? -1)?.title ?? 'N/A'}
                       </p>
                     </div>
                     <div className="rounded-md bg-slate-50 p-2">
@@ -473,6 +584,14 @@ export function ScoreGraphView({
                       <p className="text-lg font-semibold text-slate-800">{(selectedNode ?? hoveredNode)?.degree}</p>
                     </div>
                   </div>
+                  {louvainResult && louvainResult.communityByNode.has((selectedNode ?? hoveredNode)?.id ?? -1) ? (
+                    <div className="rounded-md bg-slate-50 p-2">
+                      <p className="text-xs text-slate-500">Comunidad Louvain</p>
+                      <p className="text-lg font-semibold text-slate-800">
+                        {(louvainResult.communityByNode.get((selectedNode ?? hoveredNode)?.id ?? -1) ?? 0) + 1}
+                      </p>
+                    </div>
+                  ) : null}
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Función</p>
                     <p className="mt-1 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
