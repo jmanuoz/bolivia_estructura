@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BarChart3, ListOrdered } from 'lucide-react';
-import type { TreeNode } from '@/types/dendrogram';
 import { getPairLabelsFromExplanation } from '@/lib/explanation';
 
 interface OverlapRankingProps {
-  root: TreeNode | null;
   labels: string[];
   scoreMatrix: number[][] | null;
   explanationMatrix: string[][] | null;
+  clusterByNode?: Map<number, number>;
 }
 
 interface UnitAverage {
@@ -31,26 +30,16 @@ function compactLabel(value: string, max = 62): string {
   return `${value.slice(0, max - 1)}…`;
 }
 
-function buildLeafClusterMap(root: TreeNode | null): Map<number, number> {
-  const map = new Map<number, number>();
-  if (!root) return map;
-
-  function traverse(node: TreeNode): void {
-    const isLeaf = !node.children || node.children.length === 0;
-    if (isLeaf && node.clusterId !== undefined) {
-      map.set(node.id, node.clusterId);
-      return;
-    }
-    node.children?.forEach(traverse);
-  }
-
-  traverse(root);
-  return map;
+function formatClusterId(clusterId: number | null): string {
+  return clusterId === null ? 'N/A' : String(clusterId + 1);
 }
 
-export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }: OverlapRankingProps) {
-  const leafClusterMap = useMemo(() => buildLeafClusterMap(root), [root]);
-
+export function OverlapRanking({
+  labels,
+  scoreMatrix,
+  explanationMatrix,
+  clusterByNode
+}: OverlapRankingProps) {
   const ranking = useMemo<UnitAverage[]>(() => {
     if (!scoreMatrix || labels.length === 0) return [];
 
@@ -73,12 +62,12 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
         idx: i,
         label: labels[i] ?? `Unidad ${i}`,
         average,
-        clusterId: leafClusterMap.get(i) ?? null
+        clusterId: clusterByNode?.get(i) ?? null
       };
     });
 
     return rows.sort((a, b) => b.average - a.average).slice(0, 10);
-  }, [scoreMatrix, labels, leafClusterMap]);
+  }, [scoreMatrix, labels, clusterByNode]);
 
   const [selectedUnitIdx, setSelectedUnitIdx] = useState<number | null>(null);
   const [selectedPeerIdx, setSelectedPeerIdx] = useState<number | null>(null);
@@ -114,12 +103,12 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
         idx: j,
         label: labels[j] ?? `Unidad ${j}`,
         score: value,
-        clusterId: leafClusterMap.get(j) ?? null
+        clusterId: clusterByNode?.get(j) ?? null
       });
     }
 
     return peers.sort((a, b) => b.score - a.score).slice(0, 5);
-  }, [scoreMatrix, labels, selectedUnitIdx, leafClusterMap]);
+  }, [scoreMatrix, labels, selectedUnitIdx, clusterByNode]);
 
   useEffect(() => {
     if (topRelated.length === 0) {
@@ -191,7 +180,7 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
                           #{position + 1} {compactLabel(item.label, 56)}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Cluster: {item.clusterId ?? 'N/A'}
+                          Cluster: {formatClusterId(item.clusterId)}
                         </p>
                       </div>
                       <Badge variant="outline" className="font-mono">
@@ -210,7 +199,7 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
             </div>
             {selectedItem && (
               <p className="text-xs text-slate-500 mb-2">
-                Cluster actual: {selectedItem.clusterId ?? 'N/A'}
+                Cluster actual: {formatClusterId(selectedItem.clusterId)}
               </p>
             )}
             <p className="text-xs text-slate-500 mb-3">
@@ -233,7 +222,7 @@ export function OverlapRanking({ root, labels, scoreMatrix, explanationMatrix }:
                       {idx + 1}. {compactLabel(peer.label, 62)}
                     </span>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Cluster: {peer.clusterId ?? 'N/A'}
+                      Cluster: {formatClusterId(peer.clusterId)}
                     </p>
                   </div>
                   <Badge className="bg-amber-500 text-white font-mono hover:bg-amber-500">

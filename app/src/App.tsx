@@ -1,15 +1,13 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
-import { DendrogramVisualizer } from '@/components/DendrogramVisualizer';
-import { Controls } from '@/components/Controls';
-import { NodeDetails } from '@/components/NodeDetails';
-import { ClusterHeatmaps } from '@/components/ClusterHeatmaps';
 import { OverlapRanking } from '@/components/OverlapRanking';
+import { ScoreGraphView } from '@/components/ScoreGraphView';
 import { useDendrogram } from '@/hooks/useDendrogram';
 import type { DendrogramData } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { csvParseRows } from 'd3';
+import { buildScoreGraph } from '@/lib/scoreGraph';
 
 interface MatrixLayout {
   labels: string[];
@@ -114,16 +112,7 @@ function alignTextMatrixByLabels(
 function App() {
   const {
     data,
-    treeData,
-    cutThreshold,
-    setCutThreshold,
-    selectedNode,
-    setSelectedNode,
-    hoveredNode,
-    setHoveredNode,
     loadData,
-    handleNodeClick,
-    stats
   } = useDendrogram();
 
   const [hasData, setHasData] = useState(false);
@@ -133,7 +122,7 @@ function App() {
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
   const [pairwiseError, setPairwiseError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'dendrograma' | 'heatmaps'>('dendrograma');
+  const [activeView, setActiveView] = useState<'grafo' | 'heatmaps'>('grafo');
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -282,6 +271,10 @@ function App() {
   }, [loadLocalData]);
 
   const overlapLabels = pairwiseLabels.length > 0 ? pairwiseLabels : (data?.labels ?? []);
+  const graphAnalysis = useMemo(
+    () => buildScoreGraph(overlapLabels, scoreMatrix, data?.contents, 4),
+    [overlapLabels, scoreMatrix, data?.contents]
+  );
 
   const handleLogin = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -417,14 +410,14 @@ function App() {
             <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
               <button
                 type="button"
-                onClick={() => setActiveView('dendrograma')}
+                onClick={() => setActiveView('grafo')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeView === 'dendrograma'
+                  activeView === 'grafo'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                Dendrograma
+                Grafo
               </button>
               <button
                 type="button"
@@ -439,46 +432,20 @@ function App() {
               </button>
             </div>
 
-            {activeView === 'dendrograma' && treeData && stats && (
+            {activeView === 'grafo' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-                  <div className="xl:col-span-1 space-y-4">
-                    <Controls
-                      cutThreshold={cutThreshold}
-                      maxThreshold={stats.maxDistance}
-                      onThresholdChange={setCutThreshold}
-                      stats={stats}
-                    />
-                    <NodeDetails
-                      node={selectedNode}
-                      onClose={() => setSelectedNode(null)}
-                    />
-                  </div>
-
-                  <div className="xl:col-span-3">
-                    <DendrogramVisualizer
-                      root={treeData}
-                      cutThreshold={cutThreshold}
-                      onNodeClick={handleNodeClick}
-                      onNodeHover={setHoveredNode}
-                      hoveredNode={hoveredNode}
-                    />
-                  </div>
-                </div>
-
-                <OverlapRanking
-                  root={treeData}
+                <ScoreGraphView
                   labels={overlapLabels}
+                  contents={data?.contents}
                   scoreMatrix={scoreMatrix}
-                  explanationMatrix={explanationMatrix}
+                  error={pairwiseError}
                 />
 
-                <ClusterHeatmaps
-                  root={treeData}
+                <OverlapRanking
                   labels={overlapLabels}
                   scoreMatrix={scoreMatrix}
                   explanationMatrix={explanationMatrix}
-                  error={pairwiseError}
+                  clusterByNode={graphAnalysis?.clusterByNode}
                 />
               </div>
             )}
@@ -501,7 +468,7 @@ function App() {
       <footer className="bg-white border-t border-slate-200 mt-12">
         <div className="w-full py-4">
           <p className="text-center text-sm text-slate-500">
-            Visualizador de Dendrogramas Interactivo • Creado con D3.js y React
+            Visualizador de superposiciones • Grafo y heatmaps con D3.js y React
           </p>
         </div>
       </footer>
