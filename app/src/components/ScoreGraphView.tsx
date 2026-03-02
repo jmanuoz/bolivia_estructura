@@ -232,6 +232,10 @@ export function ScoreGraphView({
     () => analysis?.nodes.find((node) => node.id === hoveredNodeId) ?? null,
     [analysis, hoveredNodeId]
   );
+  const nodeById = useMemo(
+    () => new Map((analysis?.nodes ?? []).map((node) => [node.id, node])),
+    [analysis]
+  );
 
   const selectedGroup = useMemo(
     () => visualGroups.find((group) => group.key === selectedGroupKey) ?? visualGroups[0] ?? null,
@@ -440,7 +444,7 @@ export function ScoreGraphView({
                     </p>
                     <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
                       {selectedGroup.nodeIds.map((nodeId) => {
-                        const node = analysis.nodes[nodeId];
+                        const node = nodeById.get(nodeId);
                         if (!node) return null;
                         return (
                           <button
@@ -462,40 +466,6 @@ export function ScoreGraphView({
                       })}
                     </div>
                   </div>
-                  {louvainResult?.communities.length ? (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Comunidades Louvain
-                      </p>
-                      <div className="max-h-52 space-y-2 overflow-auto pr-1">
-                        {louvainResult.communities.map((community) => (
-                          <div
-                            key={community.id}
-                            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-slate-800">
-                                Comunidad {community.id + 1}
-                              </p>
-                              <Badge variant="outline" className="font-mono">
-                                {community.nodeIds.length} nodos
-                              </Badge>
-                            </div>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {community.edgeCount} aristas internas, score medio {community.averageWeight.toFixed(2)}
-                            </p>
-                            <p className="mt-2 text-sm text-slate-700">
-                              {community.nodeIds
-                                .slice(0, 6)
-                                .map((nodeId) => analysis.nodes.find((node) => node.id === nodeId)?.label ?? `Unidad ${nodeId}`)
-                                .join(' · ')}
-                              {community.nodeIds.length > 6 ? ' · ...' : ''}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </>
               ) : (
                 <p className="text-sm text-slate-500">No hay clusters disponibles.</p>
