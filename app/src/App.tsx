@@ -18,7 +18,16 @@ interface MatrixLayout {
   firstDataColumn: number;
 }
 
-const normalizeLabel = (value?: string) => value?.trim() ?? '';
+const normalizeLabel = (value?: string) =>
+  (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[\u0096\u2010-\u2015]/g, '-')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 const AUTH_USER = 'admin';
 const AUTH_PASS = 'bolivia2026';
 const AUTH_STORAGE_KEY = 'bolivia_auth_ok';
