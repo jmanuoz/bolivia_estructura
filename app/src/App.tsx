@@ -2,18 +2,16 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
 import { OverlapRanking } from '@/components/OverlapRanking';
 import { ScoreGraphView } from '@/components/ScoreGraphView';
-import { useDendrogram } from '@/hooks/useDendrogram';
-import type { DendrogramData } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { csvParse, csvParseRows } from 'd3';
+import { csvParse } from 'd3';
+import type { WorkSheet } from 'xlsx';
 import { buildScoreGraph } from '@/lib/scoreGraph';
 
-interface MatrixLayout {
-  labels: string[];
-  dataRows: string[][];
-  rowLabelColumn: number;
-  firstDataColumn: number;
+interface PeruFunctionRow {
+  unidad?: string;
+  ministerio?: string;
+  funciones?: string;
 }
 
 const normalizeLabel = (value?: string) =>
@@ -27,114 +25,46 @@ const normalizeLabel = (value?: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 const AUTH_USER = 'admin';
-const AUTH_PASS = 'bolivia2026';
-const AUTH_STORAGE_KEY = 'bolivia_auth_ok';
+const AUTH_PASS = 'peru2026';
+const AUTH_STORAGE_KEY = 'peru_auth_ok';
 
-function detectMatrixLayout(rows: string[][]): MatrixLayout {
-  const header = rows[0] ?? [];
-  const dataRows = rows.slice(1).filter((row) => row.length > 0);
+function getPeruContents(rows: PeruFunctionRow[], labels: string[]): string[] {
+  const rowsByUnit = new Map<string, PeruFunctionRow[]>();
+  for (const row of rows) {
+    const unit = normalizeLabel(row.unidad);
+    if (!unit) continue;
+    const matches = rowsByUnit.get(unit) ?? [];
+    matches.push(row);
+    rowsByUnit.set(unit, matches);
+  }
 
-  let rowLabelColumn = 0;
-  let firstDataColumn = header[0]?.trim() === '' ? 1 : 0;
+  const usedByUnit = new Map<string, Set<number>>();
 
-  const firstDataRow = dataRows[0];
-  if (firstDataRow) {
-    for (let colIdx = 0; colIdx < firstDataRow.length; colIdx++) {
-      const candidate = normalizeLabel(firstDataRow[colIdx]);
-      if (!candidate) continue;
+  return labels.map((label) => {
+    const [unitPart, ministryPart] = label.split('|').map((part) => part.trim());
+    const unit = normalizeLabel(unitPart);
+    const ministry = normalizeLabel(ministryPart);
+    const candidates = rowsByUnit.get(unit) ?? [];
+    const used = usedByUnit.get(unit) ?? new Set<number>();
 
-      const headerIdx = header.findIndex((value) => normalizeLabel(value) === candidate);
-      if (headerIdx >= 0) {
-        rowLabelColumn = colIdx;
-        firstDataColumn = headerIdx;
-        break;
-      }
+    let candidateIndex = candidates.findIndex((row, idx) =>
+      !used.has(idx) && ministry && normalizeLabel(row.ministerio) === ministry
+    );
+    if (candidateIndex < 0) {
+      candidateIndex = candidates.findIndex((_, idx) => !used.has(idx));
     }
-  }
+    if (candidateIndex < 0 && candidates.length > 0) candidateIndex = 0;
 
-  const labels = header.slice(firstDataColumn).map(normalizeLabel);
-
-  return {
-    labels,
-    dataRows,
-    rowLabelColumn,
-    firstDataColumn
-  };
-}
-
-function parseScoreValue(rawValue?: string): number {
-  const raw = rawValue?.trim() ?? '';
-  if (!raw) return NaN;
-
-  const num = Number(raw.includes(',') ? raw.replace(',', '.') : raw);
-  return Number.isFinite(num) ? num : NaN;
-}
-
-function alignContentsByLabels(
-  sourceRows: Array<{ nombre?: string; ['Función']?: string }>,
-  targetLabels: string[],
-  fallbackContents?: string[]
-): string[] {
-  const contentByLabel = new Map<string, string>();
-
-  for (const row of sourceRows) {
-    const normalizedName = normalizeLabel(row.nombre);
-    const content = row['Función']?.trim() ?? '';
-    if (!normalizedName || !content) continue;
-    contentByLabel.set(normalizedName, content);
-  }
-
-  return targetLabels.map((label, idx) => {
-    const normalizedLabel = normalizeLabel(label);
-    return contentByLabel.get(normalizedLabel) ?? fallbackContents?.[idx] ?? '';
-  });
-}
-
-function alignNumericMatrixByLabels(
-  sourceLabels: string[],
-  sourceMatrix: number[][],
-  targetLabels: string[]
-): number[][] {
-  const indexByLabel = new Map(
-    sourceLabels.map((label, idx) => [normalizeLabel(label), idx])
-  );
-
-  return targetLabels.map((rowLabel) => {
-    const rowIdx = indexByLabel.get(normalizeLabel(rowLabel));
-    return targetLabels.map((colLabel) => {
-      const colIdx = indexByLabel.get(normalizeLabel(colLabel));
-      if (rowIdx === undefined || colIdx === undefined) return NaN;
-      const value = sourceMatrix[rowIdx]?.[colIdx];
-      return Number.isFinite(value) ? value : NaN;
-    });
-  });
-}
-
-function alignTextMatrixByLabels(
-  sourceLabels: string[],
-  sourceMatrix: string[][],
-  targetLabels: string[]
-): string[][] {
-  const indexByLabel = new Map(
-    sourceLabels.map((label, idx) => [normalizeLabel(label), idx])
-  );
-
-  return targetLabels.map((rowLabel) => {
-    const rowIdx = indexByLabel.get(normalizeLabel(rowLabel));
-    return targetLabels.map((colLabel) => {
-      const colIdx = indexByLabel.get(normalizeLabel(colLabel));
-      if (rowIdx === undefined || colIdx === undefined) return '';
-      return sourceMatrix[rowIdx]?.[colIdx] ?? '';
-    });
+    if (candidateIndex >= 0) {
+      used.add(candidateIndex);
+      usedByUnit.set(unit, used);
+      return candidates[candidateIndex]?.funciones?.trim() ?? '';
+    }
+    return '';
   });
 }
 
 function App() {
-  const {
-    data,
-    loadData,
-  } = useDendrogram();
-
   const [hasData, setHasData] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -152,134 +82,69 @@ function App() {
     return window.localStorage.getItem(AUTH_STORAGE_KEY) === '1';
   });
 
-  const parseScoreMatrix = useCallback((csvText: string): { labels: string[]; matrix: number[][] } => {
-    const rows = csvParseRows(csvText);
-    const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
-
-    const isAlignedByOrder =
-      dataRows.length >= labels.length &&
-      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
-
-    const matrix = isAlignedByOrder
-      ? labels.map((_, rowIdx) => {
-          const row = dataRows[rowIdx] ?? [];
-          return labels.map((__, colIdx) => parseScoreValue(row[firstDataColumn + colIdx]));
-        })
-      : (() => {
-          const rowByLabel = new Map(
-            dataRows.map((row) => [normalizeLabel(row[rowLabelColumn]), row])
-          );
-
-          return labels.map((label) => {
-            const rowValues = rowByLabel.get(label);
-            return labels.map((_, colIdx) => parseScoreValue(rowValues?.[firstDataColumn + colIdx]));
-          });
-        })();
-
-    return { labels, matrix };
-  }, []);
-
-  const parseExplanationMatrix = useCallback((csvText: string): { labels: string[]; matrix: string[][] } => {
-    const rows = csvParseRows(csvText);
-    const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
-
-    const isAlignedByOrder =
-      dataRows.length >= labels.length &&
-      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
-
-    const matrix = isAlignedByOrder
-      ? labels.map((_, rowIdx) => {
-          const row = dataRows[rowIdx] ?? [];
-          return labels.map((__, colIdx) => row[firstDataColumn + colIdx] ?? '');
-        })
-      : (() => {
-          const rowByLabel = new Map(
-            dataRows.map((row) => [normalizeLabel(row[rowLabelColumn]), row])
-          );
-
-          return labels.map((label) => {
-            const rowValues = rowByLabel.get(label);
-            return labels.map((_, colIdx) => rowValues?.[firstDataColumn + colIdx] ?? '');
-          });
-        })();
-
-    return { labels, matrix };
-  }, []);
-
-  const handleLoadData = useCallback((data: DendrogramData) => {
-    loadData(data);
-    setHasData(true);
-  }, [loadData]);
-
   const loadLocalData = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
     setPairwiseError(null);
     try {
-      const dataUrl = new URL('../data/dendrogram_data.json', import.meta.url);
-      const response = await fetch(dataUrl);
-      if (!response.ok) {
-        throw new Error(`No se pudo cargar el archivo local (HTTP ${response.status})`);
+      const workbookUrl = new URL('../data/matrices_superposicion_pares.xlsx', import.meta.url);
+      const functionsUrl = new URL('../data/funcionesPeru.csv', import.meta.url);
+      const [workbookResponse, functionsResponse] = await Promise.all([
+        fetch(workbookUrl),
+        fetch(functionsUrl)
+      ]);
+
+      if (!workbookResponse.ok || !functionsResponse.ok) {
+        throw new Error('No se pudieron cargar los archivos de análisis de Perú.');
       }
-      const parsed = (await response.json()) as DendrogramData;
-      handleLoadData(parsed);
 
-      try {
-        const scoresUrl = new URL('../data/scores.csv', import.meta.url);
-        const explanationsUrl = new URL('../data/explicaciones.csv', import.meta.url);
-        const contentsUrl = new URL('../data/datosTotales.csv', import.meta.url);
+      const [workbookBuffer, functionsText] = await Promise.all([
+        workbookResponse.arrayBuffer(),
+        functionsResponse.text()
+      ]);
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(workbookBuffer, { type: 'array' });
+      const scoreSheet = workbook.Sheets.scores;
+      const explanationSheet = workbook.Sheets.explicaciones;
+      if (!scoreSheet || !explanationSheet) {
+        throw new Error('El Excel debe contener las hojas "scores" y "explicaciones".');
+      }
 
-        const [scoresResponse, explanationsResponse, contentsResponse] = await Promise.all([
-          fetch(scoresUrl),
-          fetch(explanationsUrl),
-          fetch(contentsUrl)
-        ]);
+      const worksheetRows = (sheet: WorkSheet): unknown[][] =>
+        XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+          header: 1,
+          raw: true,
+          defval: ''
+        });
+      const scoreRows = worksheetRows(scoreSheet);
+      const explanationRows = worksheetRows(explanationSheet);
+      const labels = scoreRows[0]?.slice(1).map((value) => String(value).trim()).filter(Boolean) ?? [];
+      const explanationLabels = explanationRows[0]?.slice(1).map((value) => String(value).trim()) ?? [];
+      if (labels.length === 0 || explanationLabels.length !== labels.length) {
+        throw new Error('Las matrices del Excel no tienen dimensiones compatibles.');
+      }
 
-        if (!scoresResponse.ok || !explanationsResponse.ok || !contentsResponse.ok) {
-          throw new Error('No se pudieron cargar scores.csv, explicaciones.csv y/o datosTotales.csv');
-        }
+      const scores = scoreRows.slice(1, labels.length + 1).map((row) =>
+        row.slice(1, labels.length + 1).map((value) => {
+          const score = Number(value);
+          return Number.isFinite(score) ? score : NaN;
+        })
+      );
+      const explanations = explanationRows.slice(1, labels.length + 1).map((row) =>
+        row.slice(1, labels.length + 1).map((value) => String(value ?? ''))
+      );
+      const functions = csvParse(functionsText) as unknown as PeruFunctionRow[];
+      const contents = getPeruContents(functions, labels);
 
-        const [scoresText, explanationsText, contentsText] = await Promise.all([
-          scoresResponse.text(),
-          explanationsResponse.text(),
-          contentsResponse.text()
-        ]);
+      setScoreMatrix(scores);
+      setExplanationMatrix(explanations);
+      setPairwiseLabels(labels);
+      setUnitContents(contents);
+      setHasData(true);
 
-        const parsedScores = parseScoreMatrix(scoresText);
-        const parsedExplanations = parseExplanationMatrix(explanationsText);
-        const parsedContents = csvParse(contentsText) as Array<{ nombre?: string; ['Función']?: string }>;
-        const canonicalLabels = parsed.labels.map((label) => label.trim());
-
-        const alignedScores = alignNumericMatrixByLabels(
-          parsedScores.labels,
-          parsedScores.matrix,
-          canonicalLabels
-        );
-        const alignedExplanations = alignTextMatrixByLabels(
-          parsedExplanations.labels,
-          parsedExplanations.matrix,
-          canonicalLabels
-        );
-
-        setScoreMatrix(alignedScores);
-        setExplanationMatrix(alignedExplanations);
-        setPairwiseLabels(canonicalLabels);
-        setUnitContents(alignContentsByLabels(parsedContents, canonicalLabels, parsed.contents));
-
-        const scoreLabelSet = new Set(parsedScores.labels.map(normalizeLabel));
-        const explanationLabelSet = new Set(parsedExplanations.labels.map(normalizeLabel));
-        const missingInScores = canonicalLabels.filter((label) => !scoreLabelSet.has(normalizeLabel(label)));
-        const missingInExplanations = canonicalLabels.filter((label) => !explanationLabelSet.has(normalizeLabel(label)));
-        if (missingInScores.length > 0 || missingInExplanations.length > 0) {
-          toast.warning('Hay unidades del dendrograma sin correspondencia en scores/explicaciones.');
-        }
-      } catch (error) {
-        setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices CSV');
-        setScoreMatrix(null);
-        setExplanationMatrix(null);
-        setPairwiseLabels([]);
-        setUnitContents([]);
-        toast.warning('No se pudieron cargar scores/explicaciones para el heatmap');
+      const missingContents = contents.filter((content) => !content).length;
+      if (missingContents > 0) {
+        toast.warning(`${missingContents} unidades no tienen funciones asociadas en funcionesPeru.csv.`);
       }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Error al cargar datos locales');
@@ -288,20 +153,20 @@ function App() {
       setExplanationMatrix(null);
       setPairwiseLabels([]);
       setUnitContents([]);
-      toast.error('No se pudo cargar data/dendrogram_data.json');
+      toast.error('No se pudieron cargar los datos de Perú');
     } finally {
       setIsLoading(false);
     }
-  }, [handleLoadData, parseScoreMatrix, parseExplanationMatrix]);
+  }, []);
 
   useEffect(() => {
-    loadLocalData();
-  }, [loadLocalData]);
+    if (isAuthenticated) loadLocalData();
+  }, [isAuthenticated, loadLocalData]);
 
-  const overlapLabels = pairwiseLabels.length > 0 ? pairwiseLabels : (data?.labels ?? []);
+  const overlapLabels = pairwiseLabels;
   const graphAnalysis = useMemo(
-    () => buildScoreGraph(overlapLabels, scoreMatrix, unitContents.length > 0 ? unitContents : data?.contents, 4),
-    [overlapLabels, scoreMatrix, unitContents, data?.contents]
+    () => buildScoreGraph(overlapLabels, scoreMatrix, unitContents, 4),
+    [overlapLabels, scoreMatrix, unitContents]
   );
 
   const handleLogin = useCallback((event: React.FormEvent<HTMLFormElement>) => {
@@ -387,17 +252,17 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div
-                className="inline-flex h-9 w-12 flex-col overflow-hidden rounded-md border border-slate-300"
-                aria-label="Bandera de Bolivia"
-                title="Bolivia"
+                className="inline-flex h-9 w-12 flex-row overflow-hidden rounded-md border border-slate-300"
+                aria-label="Bandera del Perú"
+                title="Perú"
               >
-                <span className="h-1/3 bg-red-600" />
-                <span className="h-1/3 bg-yellow-400" />
-                <span className="h-1/3 bg-green-700" />
+                <span className="w-1/3 bg-red-600" />
+                <span className="w-1/3 bg-white" />
+                <span className="w-1/3 bg-red-600" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">
-                  Análisis de superposiciones en el gobierno de Bolivia
+                  Análisis de superposiciones en el gobierno del Perú
                 </h1>
               </div>
             </div>
@@ -420,7 +285,8 @@ function App() {
                 Carga automática de datos
               </h2>
               <p className="text-slate-600">
-                Se utiliza el archivo local <code className="bg-slate-100 px-1 py-0.5 rounded">data/dendrogram_data.json</code>.
+                Se utilizan <code className="bg-slate-100 px-1 py-0.5 rounded">funcionesPeru.csv</code> y{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">matrices_superposicion_pares.xlsx</code>.
               </p>
             </div>
 
@@ -464,7 +330,7 @@ function App() {
               <div className="space-y-6">
                 <ScoreGraphView
                   labels={overlapLabels}
-                  contents={unitContents.length > 0 ? unitContents : data?.contents}
+                  contents={unitContents}
                   scoreMatrix={scoreMatrix}
                   error={pairwiseError}
                 />

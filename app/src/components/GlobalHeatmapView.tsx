@@ -55,21 +55,8 @@ function compactLabel(value: string, max = 46): string {
 
 const ENTERPRISE_KEYWORDS = [
   'empresa',
-  'boliviana de aviación',
-  'boliviana de turismo',
-  'corporación minera de bolivia',
-  'mi teleférico',
-  'depósitos aduaneros bolivianos',
-  'yacimientos petrolíferos fiscales bolivianos',
-  'yacimientos de litio bolivianos',
-  'ecebol',
-  'quipus',
-  'enatex',
-  'cartonbol',
-  'kokabol',
-  'envibol',
-  'papelbol',
-  'azucarbol'
+  's.a.',
+  'sociedad anónima'
 ];
 
 function isEnterpriseUnit(label: string): boolean {
