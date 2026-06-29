@@ -1,12 +1,9 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
-import { OverlapRanking } from '@/components/OverlapRanking';
-import { ScoreGraphView } from '@/components/ScoreGraphView';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { csvParse } from 'd3';
 import type { WorkSheet } from 'xlsx';
-import { buildScoreGraph } from '@/lib/scoreGraph';
 
 interface PeruFunctionRow {
   unidad?: string;
@@ -71,9 +68,7 @@ function App() {
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
-  const [unitContents, setUnitContents] = useState<string[]>([]);
   const [pairwiseError, setPairwiseError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'grafo' | 'heatmaps'>('grafo');
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -139,7 +134,6 @@ function App() {
       setScoreMatrix(scores);
       setExplanationMatrix(explanations);
       setPairwiseLabels(labels);
-      setUnitContents(contents);
       setHasData(true);
 
       const missingContents = contents.filter((content) => !content).length;
@@ -152,7 +146,6 @@ function App() {
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
-      setUnitContents([]);
       toast.error('No se pudieron cargar los datos de Perú');
     } finally {
       setIsLoading(false);
@@ -164,10 +157,6 @@ function App() {
   }, [isAuthenticated, loadLocalData]);
 
   const overlapLabels = pairwiseLabels;
-  const graphAnalysis = useMemo(
-    () => buildScoreGraph(overlapLabels, scoreMatrix, unitContents, 4),
-    [overlapLabels, scoreMatrix, unitContents]
-  );
 
   const handleLogin = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -301,59 +290,12 @@ function App() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-              <button
-                type="button"
-                onClick={() => setActiveView('grafo')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeView === 'grafo'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Grafo
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('heatmaps')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeView === 'heatmaps'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Heatmaps
-              </button>
-            </div>
-
-            {activeView === 'grafo' && (
-              <div className="space-y-6">
-                <ScoreGraphView
-                  labels={overlapLabels}
-                  contents={unitContents}
-                  scoreMatrix={scoreMatrix}
-                  error={pairwiseError}
-                />
-
-                <OverlapRanking
-                  labels={overlapLabels}
-                  scoreMatrix={scoreMatrix}
-                  explanationMatrix={explanationMatrix}
-                  clusterByNode={graphAnalysis?.clusterByNode}
-                />
-              </div>
-            )}
-
-            {activeView === 'heatmaps' && (
-              <div className="space-y-6">
-                <GlobalHeatmapView
-                  labels={overlapLabels}
-                  scoreMatrix={scoreMatrix}
-                  explanationMatrix={explanationMatrix}
-                  error={pairwiseError}
-                />
-              </div>
-            )}
+            <GlobalHeatmapView
+              labels={overlapLabels}
+              scoreMatrix={scoreMatrix}
+              explanationMatrix={explanationMatrix}
+              error={pairwiseError}
+            />
           </div>
         )}
       </main>
@@ -362,7 +304,7 @@ function App() {
       <footer className="bg-white border-t border-slate-200 mt-12">
         <div className="w-full py-4">
           <p className="text-center text-sm text-slate-500">
-            Visualizador de superposiciones • Grafo y heatmaps con D3.js y React
+            Visualizador de superposiciones • Heatmaps con D3.js y React
           </p>
         </div>
       </footer>

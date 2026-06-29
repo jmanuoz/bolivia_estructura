@@ -237,7 +237,11 @@ export function GlobalHeatmapView({
 
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
-        const score = scoreMatrix[row]?.[col];
+        if (row <= col) continue;
+
+        const score = Number.isFinite(scoreMatrix[row]?.[col])
+          ? scoreMatrix[row]?.[col]
+          : scoreMatrix[col]?.[row];
         const validScore = Number.isFinite(score) ? score : null;
         const style = getCellStyle(validScore);
 
@@ -297,9 +301,17 @@ export function GlobalHeatmapView({
 
     const col = Math.floor((x - leftMargin) / cellSize);
     const row = Math.floor((y - topMargin) / cellSize);
-    const score = scoreMatrix[row]?.[col];
+    if (row <= col) return null;
+
+    const score = Number.isFinite(scoreMatrix[row]?.[col])
+      ? scoreMatrix[row]?.[col]
+      : scoreMatrix[col]?.[row];
     const validScore = Number.isFinite(score) ? score : null;
     const scoreText = validScore === null ? 'N/A' : validScore.toFixed(2);
+    const explanation =
+      explanationMatrix?.[row]?.[col] ||
+      explanationMatrix?.[col]?.[row] ||
+      'Sin explicación disponible.';
 
     return {
       rowIdx: row,
@@ -307,7 +319,7 @@ export function GlobalHeatmapView({
       rowLabel: labels[row] ?? `Unidad ${row}`,
       colLabel: labels[col] ?? `Unidad ${col}`,
       scoreText,
-      explanation: explanationMatrix?.[row]?.[col] || 'Sin explicación disponible.',
+      explanation,
       x: leftMargin + (col + 0.5) * cellSize,
       y: topMargin + (row + 0.5) * cellSize
     };
