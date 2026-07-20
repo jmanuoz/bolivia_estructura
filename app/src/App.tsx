@@ -1,14 +1,8 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
-import { OverlapRanking } from '@/components/OverlapRanking';
-import { ScoreGraphView } from '@/components/ScoreGraphView';
-import { useDendrogram } from '@/hooks/useDendrogram';
-import type { DendrogramData } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { csvParse } from 'd3';
 import * as XLSX from 'xlsx';
-import { buildScoreGraph } from '@/lib/scoreGraph';
 
 interface MatrixLayout {
   labels: string[];
@@ -71,46 +65,6 @@ function parseScoreValue(rawValue?: string): number {
   return Number.isFinite(num) ? num : NaN;
 }
 
-function alignContentsByLabels(
-  sourceRows: Array<{ nombre?: string; ['Función']?: string }>,
-  targetLabels: string[],
-  fallbackContents?: string[]
-): string[] {
-  const contentByLabel = new Map<string, string>();
-
-  for (const row of sourceRows) {
-    const normalizedName = normalizeLabel(row.nombre);
-    const content = row['Función']?.trim() ?? '';
-    if (!normalizedName || !content) continue;
-    contentByLabel.set(normalizedName, content);
-  }
-
-  return targetLabels.map((label, idx) => {
-    const normalizedLabel = normalizeLabel(label);
-    return contentByLabel.get(normalizedLabel) ?? fallbackContents?.[idx] ?? '';
-  });
-}
-
-function alignNumericMatrixByLabels(
-  sourceLabels: string[],
-  sourceMatrix: number[][],
-  targetLabels: string[]
-): number[][] {
-  const indexByLabel = new Map(
-    sourceLabels.map((label, idx) => [normalizeLabel(label), idx])
-  );
-
-  return targetLabels.map((rowLabel) => {
-    const rowIdx = indexByLabel.get(normalizeLabel(rowLabel));
-    return targetLabels.map((colLabel) => {
-      const colIdx = indexByLabel.get(normalizeLabel(colLabel));
-      if (rowIdx === undefined || colIdx === undefined) return NaN;
-      const value = sourceMatrix[rowIdx]?.[colIdx];
-      return Number.isFinite(value) ? value : NaN;
-    });
-  });
-}
-
 function alignTextMatrixByLabels(
   sourceLabels: string[],
   sourceMatrix: string[][],
@@ -131,20 +85,11 @@ function alignTextMatrixByLabels(
 }
 
 function App() {
-  const {
-    data,
-    loadData,
-  } = useDendrogram();
-
-  const [hasData, setHasData] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
-  const [unitContents, setUnitContents] = useState<string[]>([]);
-  const [pairwiseError, setPairwiseError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'grafo' | 'heatmaps'>('grafo');
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -205,113 +150,72 @@ function App() {
     return { labels, matrix };
   }, []);
 
-  const handleLoadData = useCallback((data: DendrogramData) => {
-    loadData(data);
-    setHasData(true);
-  }, [loadData]);
-
   const loadLocalData = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
-    setPairwiseError(null);
     try {
-      const dataUrl = new URL('../data/dendrogram_data.json', import.meta.url);
-      const response = await fetch(dataUrl);
-      if (!response.ok) {
-        throw new Error(`No se pudo cargar el archivo local (HTTP ${response.status})`);
+      const scoresUrl = new URL('../data/superposiciones_scores.xlsx', import.meta.url);
+      const explanationsUrl = new URL('../data/superposiciones_explicaciones.xlsx', import.meta.url);
+
+      const [scoresResponse, explanationsResponse] = await Promise.all([
+        fetch(scoresUrl),
+        fetch(explanationsUrl)
+      ]);
+
+      if (!scoresResponse.ok || !explanationsResponse.ok) {
+        throw new Error('No se pudieron cargar superposiciones_scores.xlsx y/o superposiciones_explicaciones.xlsx');
       }
-      const parsed = (await response.json()) as DendrogramData;
-      handleLoadData(parsed);
 
-      try {
-        const scoresUrl = new URL('../data/superposiciones_scores.xlsx', import.meta.url);
-        const explanationsUrl = new URL('../data/superposiciones_explicaciones.xlsx', import.meta.url);
-        const contentsUrl = new URL('../data/datosTotales.csv', import.meta.url);
+      const sheetToRows = (buffer: ArrayBuffer): string[][] => {
+        const workbook = XLSX.read(buffer);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json<string[]>(sheet, {
+          header: 1,
+          raw: false,
+          defval: ''
+        });
+      };
 
-        const [scoresResponse, explanationsResponse, contentsResponse] = await Promise.all([
-          fetch(scoresUrl),
-          fetch(explanationsUrl),
-          fetch(contentsUrl)
-        ]);
+      const [scoresBuffer, explanationsBuffer] = await Promise.all([
+        scoresResponse.arrayBuffer(),
+        explanationsResponse.arrayBuffer()
+      ]);
 
-        if (!scoresResponse.ok || !explanationsResponse.ok || !contentsResponse.ok) {
-          throw new Error('No se pudieron cargar superposiciones_scores.xlsx, superposiciones_explicaciones.xlsx y/o datosTotales.csv');
-        }
+      const parsedScores = parseScoreMatrix(sheetToRows(scoresBuffer));
+      const parsedExplanations = parseExplanationMatrix(sheetToRows(explanationsBuffer));
+      const canonicalLabels = parsedScores.labels;
 
-        const sheetToRows = (buffer: ArrayBuffer): string[][] => {
-          const workbook = XLSX.read(buffer);
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          return XLSX.utils.sheet_to_json<string[]>(sheet, {
-            header: 1,
-            raw: false,
-            defval: ''
-          });
-        };
+      const alignedExplanations = alignTextMatrixByLabels(
+        parsedExplanations.labels,
+        parsedExplanations.matrix,
+        canonicalLabels
+      );
 
-        const [scoresBuffer, explanationsBuffer, contentsText] = await Promise.all([
-          scoresResponse.arrayBuffer(),
-          explanationsResponse.arrayBuffer(),
-          contentsResponse.text()
-        ]);
+      setScoreMatrix(parsedScores.matrix);
+      setExplanationMatrix(alignedExplanations);
+      setPairwiseLabels(canonicalLabels);
 
-        const parsedScores = parseScoreMatrix(sheetToRows(scoresBuffer));
-        const parsedExplanations = parseExplanationMatrix(sheetToRows(explanationsBuffer));
-        const parsedContents = csvParse(contentsText) as Array<{ nombre?: string; ['Función']?: string }>;
-        const canonicalLabels = parsed.labels.map((label) => label.trim());
-
-        const alignedScores = alignNumericMatrixByLabels(
-          parsedScores.labels,
-          parsedScores.matrix,
-          canonicalLabels
-        );
-        const alignedExplanations = alignTextMatrixByLabels(
-          parsedExplanations.labels,
-          parsedExplanations.matrix,
-          canonicalLabels
-        );
-
-        setScoreMatrix(alignedScores);
-        setExplanationMatrix(alignedExplanations);
-        setPairwiseLabels(canonicalLabels);
-        setUnitContents(alignContentsByLabels(parsedContents, canonicalLabels, parsed.contents));
-
-        const scoreLabelSet = new Set(parsedScores.labels.map(normalizeLabel));
-        const explanationLabelSet = new Set(parsedExplanations.labels.map(normalizeLabel));
-        const missingInScores = canonicalLabels.filter((label) => !scoreLabelSet.has(normalizeLabel(label)));
-        const missingInExplanations = canonicalLabels.filter((label) => !explanationLabelSet.has(normalizeLabel(label)));
-        if (missingInScores.length > 0 || missingInExplanations.length > 0) {
-          toast.warning('Hay unidades del dendrograma sin correspondencia en scores/explicaciones.');
-        }
-      } catch (error) {
-        setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices XLSX');
-        setScoreMatrix(null);
-        setExplanationMatrix(null);
-        setPairwiseLabels([]);
-        setUnitContents([]);
-        toast.warning('No se pudieron cargar scores/explicaciones para el heatmap');
+      const explanationLabelSet = new Set(parsedExplanations.labels.map(normalizeLabel));
+      const missingInExplanations = canonicalLabels.filter((label) => !explanationLabelSet.has(normalizeLabel(label)));
+      if (missingInExplanations.length > 0) {
+        toast.warning('Hay unidades de scores sin correspondencia en explicaciones.');
       }
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Error al cargar datos locales');
-      setHasData(false);
+      setLoadError(error instanceof Error ? error.message : 'Error al cargar matrices XLSX');
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
-      setUnitContents([]);
-      toast.error('No se pudo cargar data/dendrogram_data.json');
+      toast.error('No se pudieron cargar superposiciones_scores.xlsx / superposiciones_explicaciones.xlsx');
     } finally {
       setIsLoading(false);
     }
-  }, [handleLoadData, parseScoreMatrix, parseExplanationMatrix]);
+  }, [parseScoreMatrix, parseExplanationMatrix]);
 
   useEffect(() => {
     loadLocalData();
   }, [loadLocalData]);
 
-  const overlapLabels = pairwiseLabels.length > 0 ? pairwiseLabels : (data?.labels ?? []);
-  const graphAnalysis = useMemo(
-    () => buildScoreGraph(overlapLabels, scoreMatrix, unitContents.length > 0 ? unitContents : data?.contents, 4),
-    [overlapLabels, scoreMatrix, unitContents, data?.contents]
-  );
+  const hasData = scoreMatrix !== null && explanationMatrix !== null && pairwiseLabels.length > 0;
 
   const handleLogin = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -429,7 +333,10 @@ function App() {
                 Carga automática de datos
               </h2>
               <p className="text-slate-600">
-                Se utiliza el archivo local <code className="bg-slate-100 px-1 py-0.5 rounded">data/dendrogram_data.json</code>.
+                Se utilizan los archivos locales{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/superposiciones_scores.xlsx</code>{' '}
+                y{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/superposiciones_explicaciones.xlsx</code>.
               </p>
             </div>
 
@@ -444,59 +351,12 @@ function App() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-              <button
-                type="button"
-                onClick={() => setActiveView('grafo')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeView === 'grafo'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Grafo
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('heatmaps')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeView === 'heatmaps'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Heatmaps
-              </button>
-            </div>
-
-            {activeView === 'grafo' && (
-              <div className="space-y-6">
-                <ScoreGraphView
-                  labels={overlapLabels}
-                  contents={unitContents.length > 0 ? unitContents : data?.contents}
-                  scoreMatrix={scoreMatrix}
-                  error={pairwiseError}
-                />
-
-                <OverlapRanking
-                  labels={overlapLabels}
-                  scoreMatrix={scoreMatrix}
-                  explanationMatrix={explanationMatrix}
-                  clusterByNode={graphAnalysis?.clusterByNode}
-                />
-              </div>
-            )}
-
-            {activeView === 'heatmaps' && (
-              <div className="space-y-6">
-                <GlobalHeatmapView
-                  labels={overlapLabels}
-                  scoreMatrix={scoreMatrix}
-                  explanationMatrix={explanationMatrix}
-                  error={pairwiseError}
-                />
-              </div>
-            )}
+            <GlobalHeatmapView
+              labels={pairwiseLabels}
+              scoreMatrix={scoreMatrix}
+              explanationMatrix={explanationMatrix}
+              error={loadError}
+            />
           </div>
         )}
       </main>
@@ -505,7 +365,7 @@ function App() {
       <footer className="bg-white border-t border-slate-200 mt-12">
         <div className="w-full py-4">
           <p className="text-center text-sm text-slate-500">
-            Visualizador de superposiciones • Grafo y heatmaps con D3.js y React
+            Visualizador de superposiciones • Heatmaps con D3.js y React
           </p>
         </div>
       </footer>

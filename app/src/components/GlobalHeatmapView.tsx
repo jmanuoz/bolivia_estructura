@@ -249,7 +249,7 @@ export function GlobalHeatmapView({
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
+      for (let col = 0; col <= row; col++) {
         const score = scoreMatrix[row]?.[col];
         const validScore = Number.isFinite(score) ? score : null;
         const style = getCellStyle(validScore);
@@ -310,6 +310,7 @@ export function GlobalHeatmapView({
 
     const col = Math.floor((x - leftMargin) / cellSize);
     const row = Math.floor((y - topMargin) / cellSize);
+    if (col > row) return null;
     const score = scoreMatrix[row]?.[col];
     const validScore = Number.isFinite(score) ? score : null;
     const scoreText = validScore === null ? 'N/A' : validScore.toFixed(2);
