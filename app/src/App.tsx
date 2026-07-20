@@ -6,7 +6,8 @@ import { useDendrogram } from '@/hooks/useDendrogram';
 import type { DendrogramData } from '@/types/dendrogram';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { csvParse, csvParseRows } from 'd3';
+import { csvParse } from 'd3';
+import * as XLSX from 'xlsx';
 import { buildScoreGraph } from '@/lib/scoreGraph';
 
 interface MatrixLayout {
@@ -152,8 +153,7 @@ function App() {
     return window.localStorage.getItem(AUTH_STORAGE_KEY) === '1';
   });
 
-  const parseScoreMatrix = useCallback((csvText: string): { labels: string[]; matrix: number[][] } => {
-    const rows = csvParseRows(csvText);
+  const parseScoreMatrix = useCallback((rows: string[][]): { labels: string[]; matrix: number[][] } => {
     const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
 
     const isAlignedByOrder =
@@ -179,8 +179,7 @@ function App() {
     return { labels, matrix };
   }, []);
 
-  const parseExplanationMatrix = useCallback((csvText: string): { labels: string[]; matrix: string[][] } => {
-    const rows = csvParseRows(csvText);
+  const parseExplanationMatrix = useCallback((rows: string[][]): { labels: string[]; matrix: string[][] } => {
     const { labels, dataRows, rowLabelColumn, firstDataColumn } = detectMatrixLayout(rows);
 
     const isAlignedByOrder =
@@ -225,8 +224,8 @@ function App() {
       handleLoadData(parsed);
 
       try {
-        const scoresUrl = new URL('../data/scores.csv', import.meta.url);
-        const explanationsUrl = new URL('../data/explicaciones.csv', import.meta.url);
+        const scoresUrl = new URL('../data/superposiciones_scores.xlsx', import.meta.url);
+        const explanationsUrl = new URL('../data/superposiciones_explicaciones.xlsx', import.meta.url);
         const contentsUrl = new URL('../data/datosTotales.csv', import.meta.url);
 
         const [scoresResponse, explanationsResponse, contentsResponse] = await Promise.all([
@@ -236,17 +235,27 @@ function App() {
         ]);
 
         if (!scoresResponse.ok || !explanationsResponse.ok || !contentsResponse.ok) {
-          throw new Error('No se pudieron cargar scores.csv, explicaciones.csv y/o datosTotales.csv');
+          throw new Error('No se pudieron cargar superposiciones_scores.xlsx, superposiciones_explicaciones.xlsx y/o datosTotales.csv');
         }
 
-        const [scoresText, explanationsText, contentsText] = await Promise.all([
-          scoresResponse.text(),
-          explanationsResponse.text(),
+        const sheetToRows = (buffer: ArrayBuffer): string[][] => {
+          const workbook = XLSX.read(buffer);
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          return XLSX.utils.sheet_to_json<string[]>(sheet, {
+            header: 1,
+            raw: false,
+            defval: ''
+          });
+        };
+
+        const [scoresBuffer, explanationsBuffer, contentsText] = await Promise.all([
+          scoresResponse.arrayBuffer(),
+          explanationsResponse.arrayBuffer(),
           contentsResponse.text()
         ]);
 
-        const parsedScores = parseScoreMatrix(scoresText);
-        const parsedExplanations = parseExplanationMatrix(explanationsText);
+        const parsedScores = parseScoreMatrix(sheetToRows(scoresBuffer));
+        const parsedExplanations = parseExplanationMatrix(sheetToRows(explanationsBuffer));
         const parsedContents = csvParse(contentsText) as Array<{ nombre?: string; ['Función']?: string }>;
         const canonicalLabels = parsed.labels.map((label) => label.trim());
 
@@ -274,7 +283,7 @@ function App() {
           toast.warning('Hay unidades del dendrograma sin correspondencia en scores/explicaciones.');
         }
       } catch (error) {
-        setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices CSV');
+        setPairwiseError(error instanceof Error ? error.message : 'Error al cargar matrices XLSX');
         setScoreMatrix(null);
         setExplanationMatrix(null);
         setPairwiseLabels([]);
