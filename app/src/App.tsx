@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
+import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRanking';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -350,14 +352,27 @@ function App() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            <GlobalHeatmapView
-              labels={pairwiseLabels}
-              scoreMatrix={scoreMatrix}
-              explanationMatrix={explanationMatrix}
-              error={loadError}
-            />
-          </div>
+          <Tabs defaultValue="heatmap" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="heatmap">Heatmap completo</TabsTrigger>
+              <TabsTrigger value="ranking-descentralizadas">Top 20 unidades descentralizadas</TabsTrigger>
+            </TabsList>
+            <TabsContent value="heatmap" className="space-y-6">
+              <GlobalHeatmapView
+                labels={pairwiseLabels}
+                scoreMatrix={scoreMatrix}
+                explanationMatrix={explanationMatrix}
+                error={loadError}
+              />
+            </TabsContent>
+            <TabsContent value="ranking-descentralizadas" className="space-y-6">
+              <DecentralizedOverlapRanking
+                labels={pairwiseLabels}
+                scoreMatrix={scoreMatrix}
+                explanationMatrix={explanationMatrix}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </main>
 
