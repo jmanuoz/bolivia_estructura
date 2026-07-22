@@ -3,6 +3,8 @@ import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
 import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRanking';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
+import { Download } from 'lucide-react';
+import { createResultsWorkbook } from '@/lib/exportResults';
 import { formatUnitLabel } from '@/lib/unitLabels';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -234,6 +236,22 @@ function App() {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
   }, []);
 
+  const handleExportResults = useCallback(() => {
+    if (!scoreMatrix || !explanationMatrix || pairwiseLabels.length === 0) {
+      toast.error('No hay datos para exportar.');
+      return;
+    }
+
+    const workbook = createResultsWorkbook({
+      labels: pairwiseLabels,
+      scoreMatrix,
+      explanationMatrix
+    });
+
+    XLSX.writeFile(workbook, 'scores_y_superposiciones.xlsx');
+    toast.success('Archivo exportado.');
+  }, [scoreMatrix, explanationMatrix, pairwiseLabels]);
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
@@ -312,13 +330,25 @@ function App() {
                 </h1>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
-            >
-              Cerrar sesión
-            </button>
+            <div className="flex items-center gap-2">
+              {hasData && (
+                <button
+                  type="button"
+                  onClick={handleExportResults}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-blue-700 text-white text-sm font-medium hover:bg-blue-800"
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar resultados
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
+              >
+                Cerrar sesión
+              </button>
+            </div>
           </div>
         </div>
       </header>
