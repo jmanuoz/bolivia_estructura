@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, Trophy } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ChevronDown, Search, Trophy } from 'lucide-react';
+import {
+  compareDecentralizedFirst,
+  isDecentralizedUnit,
+  normalizeUnitLabel
+} from '@/lib/unitLabels';
 
 interface DecentralizedOverlapRankingProps {
   labels: string[];
@@ -26,80 +32,6 @@ interface OverlapPeer {
 
 const HIGH_SCORE = 4;
 const VERY_HIGH_SCORE = 5;
-const TOP_N = 20;
-
-const MINISTRY_PREFIXES = ['ministerio de', 'ministerio del', 'viceministerio de', 'viceministerio del'];
-
-// Coincidencia exacta (no por substring) contra las 43 empresas públicas del dataset:
-// varias entidades descentralizadas mencionan "empresa" en su nombre (p. ej. OFEP, SEDEM,
-// Autoridad de Fiscalización de Empresas) sin ser ellas mismas una empresa pública.
-const ENTERPRISE_LABELS = new Set([
-  'papelbol',
-  'ecebol',
-  'eepaf',
-  'eeps',
-  'envibol',
-  'kokabol',
-  'ibae',
-  'ibq',
-  'lifab',
-  'cartonbol',
-  'ypfb corporacion',
-  'ende corporacion',
-  'comibol',
-  'emh',
-  'emcorocoro',
-  'emk',
-  'emc',
-  'epcoro',
-  'emv',
-  'tab',
-  'bolivia tv',
-  'cofadena',
-  'enabol',
-  'emapa',
-  'mutun',
-  'boa',
-  'dab',
-  'ebih',
-  'abe',
-  'easba',
-  'ebc',
-  'quipus',
-  'mi teleferico',
-  'yacana',
-  'asp b',
-  'gestora',
-  'tam',
-  'ylb',
-  'editorial del estado',
-  'eba',
-  'esabol',
-  'b agro',
-  'misicuni'
-]);
-
-function normalize(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function isMinistryOrViceministry(label: string): boolean {
-  const normalized = normalize(label);
-  return MINISTRY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
-}
-
-function isEnterpriseUnit(label: string): boolean {
-  return ENTERPRISE_LABELS.has(normalize(label));
-}
-
-function isDecentralizedUnit(label: string): boolean {
-  return !isMinistryOrViceministry(label) && !isEnterpriseUnit(label);
-}
 
 function compactLabel(value: string, max = 62): string {
   if (value.length <= max) return value;
@@ -112,6 +44,7 @@ export function DecentralizedOverlapRanking({
   explanationMatrix
 }: DecentralizedOverlapRankingProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const ranking = useMemo<UnitOverlapCount[]>(() => {
     if (!scoreMatrix || labels.length === 0) return [];
@@ -144,10 +77,19 @@ export function DecentralizedOverlapRanking({
       });
     }
 
-    return rows
-      .sort((a, b) => b.total - a.total || b.veryHighCount - a.veryHighCount)
-      .slice(0, TOP_N);
+    return rows.sort(
+      (a, b) =>
+        b.total - a.total ||
+        b.veryHighCount - a.veryHighCount ||
+        a.label.localeCompare(b.label, 'es')
+    );
   }, [scoreMatrix, labels]);
+
+  const filteredRanking = useMemo(() => {
+    const query = normalizeUnitLabel(searchQuery);
+    if (!query) return ranking;
+    return ranking.filter((item) => normalizeUnitLabel(item.label).includes(query));
+  }, [ranking, searchQuery]);
 
   const expandedPeers = useMemo<OverlapPeer[]>(() => {
     if (!scoreMatrix || expandedIdx === null) return [];
@@ -172,7 +114,7 @@ export function DecentralizedOverlapRanking({
       });
     }
 
-    return peers.sort((a, b) => b.score - a.score);
+    return peers.sort(compareDecentralizedFirst);
   }, [scoreMatrix, explanationMatrix, labels, expandedIdx]);
 
   if (!scoreMatrix || ranking.length === 0) {
@@ -184,7 +126,7 @@ export function DecentralizedOverlapRanking({
       <CardHeader className="pb-3 bg-slate-50/70 border-b border-slate-200">
         <CardTitle className="text-base flex items-center gap-2">
           <Trophy className="w-4 h-4 text-blue-700" />
-          Top 20 unidades descentralizadas con más superposiciones altas y muy altas
+          Unidades descentralizadas con más superposiciones altas y muy altas
         </CardTitle>
         <p className="text-xs text-slate-500 mt-1">
           Considera únicamente entidades descentralizadas (excluye ministerios, viceministerios y empresas
@@ -192,9 +134,20 @@ export function DecentralizedOverlapRanking({
         </p>
       </CardHeader>
       <CardContent className="pt-4">
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Buscar unidad"
+            className="h-7 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+          />
+        </div>
         <div className="space-y-2">
-          {ranking.map((item, position) => {
+          {filteredRanking.map((item) => {
             const isExpanded = expandedIdx === item.idx;
+            const position = ranking.findIndex((rankedItem) => rankedItem.idx === item.idx);
             return (
               <div
                 key={item.idx}
@@ -259,6 +212,11 @@ export function DecentralizedOverlapRanking({
               </div>
             );
           })}
+          {filteredRanking.length === 0 && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+              No se encontraron unidades para esa búsqueda.
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

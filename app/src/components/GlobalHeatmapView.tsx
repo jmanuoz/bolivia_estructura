@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { decentralizedPriority } from '@/lib/unitLabels';
 
 interface GlobalHeatmapViewProps {
   labels: string[];
@@ -53,32 +54,8 @@ function compactLabel(value: string, max = 46): string {
   return `${value.slice(0, max - 1)}…`;
 }
 
-const ENTERPRISE_KEYWORDS = [
-  'empresa',
-  'boliviana de aviación',
-  'boliviana de turismo',
-  'corporación minera de bolivia',
-  'mi teleférico',
-  'depósitos aduaneros bolivianos',
-  'yacimientos petrolíferos fiscales bolivianos',
-  'yacimientos de litio bolivianos',
-  'ecebol',
-  'quipus',
-  'enatex',
-  'cartonbol',
-  'kokabol',
-  'envibol',
-  'papelbol',
-  'azucarbol'
-];
-
-function isEnterpriseUnit(label: string): boolean {
-  const normalized = label.toLowerCase();
-  return ENTERPRISE_KEYWORDS.some((keyword) => normalized.includes(keyword));
-}
-
 function pairPriority(rowLabel: string, colLabel: string): number {
-  return isEnterpriseUnit(rowLabel) || isEnterpriseUnit(colLabel) ? 0 : 1;
+  return Math.min(decentralizedPriority(rowLabel), decentralizedPriority(colLabel));
 }
 
 function getContrastTextFromRgb(rgbString: string): string {
@@ -181,21 +158,16 @@ export function GlobalHeatmapView({
     return fullRange;
   }, [scoreStats]);
 
-  useEffect(() => {
-    const withCases = scoreStatsWithEmptyLevels.filter((item) => item.count > 0);
-    if (withCases.length === 0) {
-      setSelectedScore(null);
-      return;
+  const effectiveSelectedScore = useMemo(() => {
+    if (selectedScore && scoreStatsWithEmptyLevels.some((item) => item.scoreText === selectedScore)) {
+      return selectedScore;
     }
-    setSelectedScore((current) => {
-      if (!current) return withCases[0].scoreText;
-      return scoreStatsWithEmptyLevels.some((item) => item.scoreText === current) ? current : withCases[0].scoreText;
-    });
-  }, [scoreStatsWithEmptyLevels]);
+    return scoreStatsWithEmptyLevels.find((item) => item.count > 0)?.scoreText ?? null;
+  }, [scoreStatsWithEmptyLevels, selectedScore]);
 
   const selectedStat = useMemo(
-    () => scoreStatsWithEmptyLevels.find((item) => item.scoreText === selectedScore) ?? null,
-    [scoreStatsWithEmptyLevels, selectedScore]
+    () => scoreStatsWithEmptyLevels.find((item) => item.scoreText === effectiveSelectedScore) ?? null,
+    [scoreStatsWithEmptyLevels, effectiveSelectedScore]
   );
 
   const pieData = useMemo<ScoreSlice[]>(() => {
@@ -374,7 +346,7 @@ export function GlobalHeatmapView({
                 type="button"
                 onClick={() => setSelectedScore(stat.scoreText)}
                 className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
-                  selectedScore === stat.scoreText
+                  effectiveSelectedScore === stat.scoreText
                     ? 'border-blue-300 bg-blue-50'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}

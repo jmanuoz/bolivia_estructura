@@ -3,6 +3,7 @@ import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
 import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRanking';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
+import { formatUnitLabel } from '@/lib/unitLabels';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -49,7 +50,7 @@ function detectMatrixLayout(rows: string[][]): MatrixLayout {
     }
   }
 
-  const labels = header.slice(firstDataColumn).map(normalizeLabel);
+  const labels = header.slice(firstDataColumn).map(formatUnitLabel);
 
   return {
     labels,
@@ -105,7 +106,7 @@ function App() {
 
     const isAlignedByOrder =
       dataRows.length >= labels.length &&
-      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
+      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === normalizeLabel(label));
 
     const matrix = isAlignedByOrder
       ? labels.map((_, rowIdx) => {
@@ -131,7 +132,7 @@ function App() {
 
     const isAlignedByOrder =
       dataRows.length >= labels.length &&
-      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === label);
+      labels.every((label, rowIdx) => normalizeLabel(dataRows[rowIdx]?.[rowLabelColumn]) === normalizeLabel(label));
 
     const matrix = isAlignedByOrder
       ? labels.map((_, rowIdx) => {
@@ -350,7 +351,7 @@ function App() {
           <Tabs defaultValue="heatmap" className="space-y-4">
             <TabsList>
               <TabsTrigger value="heatmap">Heatmap completo</TabsTrigger>
-              <TabsTrigger value="ranking-descentralizadas">Top 20 unidades descentralizadas</TabsTrigger>
+              <TabsTrigger value="ranking-descentralizadas">Descentralizadas</TabsTrigger>
             </TabsList>
             <TabsContent value="heatmap" className="space-y-6">
               <GlobalHeatmapView
