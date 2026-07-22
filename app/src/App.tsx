@@ -4,7 +4,7 @@ import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRa
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { Download } from 'lucide-react';
-import { createResultsWorkbook } from '@/lib/exportResults';
+import { createResultsWorkbook, downloadFile } from '@/lib/exportResults';
 import { formatUnitLabel } from '@/lib/unitLabels';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -29,6 +29,8 @@ const normalizeLabel = (value?: string) =>
 const AUTH_USER = 'admin';
 const AUTH_PASS = 'bolivia2026';
 const AUTH_STORAGE_KEY = 'bolivia_auth_ok';
+const BASE_UNITS_FILENAME = 'Base completa de unidades Bolivia.xlsx';
+const baseUnitsFileUrl = new URL('../data/Base completa de unidades Bolivia.xlsx', import.meta.url).href;
 
 function detectMatrixLayout(rows: string[][]): MatrixLayout {
   const header = rows[0] ?? [];
@@ -249,7 +251,8 @@ function App() {
     });
 
     XLSX.writeFile(workbook, 'scores_y_superposiciones.xlsx');
-    toast.success('Archivo exportado.');
+    downloadFile(baseUnitsFileUrl, BASE_UNITS_FILENAME);
+    toast.success('Archivos exportados.');
   }, [scoreMatrix, explanationMatrix, pairwiseLabels]);
 
   if (!isAuthenticated) {

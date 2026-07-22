@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as XLSX from 'xlsx';
 
-import { createResultsWorkbook } from '../src/lib/exportResults.ts';
+import { createResultsWorkbook, downloadFile } from '../src/lib/exportResults.ts';
 
 test('creates a workbook with scores and superposiciones sheets', () => {
   const workbook = createResultsWorkbook({
@@ -32,4 +32,38 @@ test('creates a workbook with scores and superposiciones sheets', () => {
     ['Unidad A', '', 'Coinciden en atribuciones'],
     ['Unidad B', 'Coinciden en atribuciones', '']
   ]);
+});
+
+test('downloads a static file through an anchor element', () => {
+  const clicked: string[] = [];
+  const removed: string[] = [];
+  const appended: Array<{ href: string; download: string }> = [];
+  const link = {
+    href: '',
+    download: '',
+    rel: '',
+    click: () => clicked.push(link.href),
+    remove: () => removed.push(link.download)
+  };
+  const doc = {
+    createElement: () => link,
+    body: {
+      appendChild: (element: typeof link) => {
+        appended.push({ href: element.href, download: element.download });
+        return element;
+      }
+    }
+  };
+
+  downloadFile('/assets/base.xlsx', 'Base completa de unidades Bolivia.xlsx', doc);
+
+  assert.deepEqual(appended, [
+    {
+      href: '/assets/base.xlsx',
+      download: 'Base completa de unidades Bolivia.xlsx'
+    }
+  ]);
+  assert.deepEqual(clicked, ['/assets/base.xlsx']);
+  assert.deepEqual(removed, ['Base completa de unidades Bolivia.xlsx']);
+  assert.equal(link.rel, 'noopener');
 });

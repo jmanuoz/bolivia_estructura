@@ -6,6 +6,13 @@ export interface ResultsWorkbookInput {
   explanationMatrix: string[][];
 }
 
+interface DownloadDocument {
+  createElement(tagName: 'a'): HTMLAnchorElement;
+  body: {
+    appendChild(element: HTMLAnchorElement): HTMLAnchorElement;
+  };
+}
+
 function matrixToSheetRows<T>(labels: string[], matrix: T[][]): Array<Array<string | T>> {
   return [
     ['', ...labels],
@@ -30,4 +37,18 @@ export function createResultsWorkbook({
   XLSX.utils.book_append_sheet(workbook, superposicionesSheet, 'superposiciones');
 
   return workbook;
+}
+
+export function downloadFile(
+  url: string,
+  filename: string,
+  doc: DownloadDocument = document
+): void {
+  const link = doc.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener';
+  doc.body.appendChild(link);
+  link.click();
+  link.remove();
 }
