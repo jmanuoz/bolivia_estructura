@@ -156,21 +156,21 @@ function App() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const scoresUrl = new URL('../data/superposiciones_scores.xlsx', import.meta.url);
-      const explanationsUrl = new URL('../data/superposiciones_explicaciones.xlsx', import.meta.url);
+      const dataUrl = new URL('../data/Superposiciones julio 2026 v6.xlsx', import.meta.url);
+      const response = await fetch(dataUrl);
 
-      const [scoresResponse, explanationsResponse] = await Promise.all([
-        fetch(scoresUrl),
-        fetch(explanationsUrl)
-      ]);
-
-      if (!scoresResponse.ok || !explanationsResponse.ok) {
-        throw new Error('No se pudieron cargar superposiciones_scores.xlsx y/o superposiciones_explicaciones.xlsx');
+      if (!response.ok) {
+        throw new Error('No se pudo cargar Superposiciones julio 2026 v6.xlsx');
       }
 
-      const sheetToRows = (buffer: ArrayBuffer): string[][] => {
-        const workbook = XLSX.read(buffer);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const buffer = await response.arrayBuffer();
+      const workbook = XLSX.read(buffer);
+
+      const sheetToRows = (sheetName: string): string[][] => {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) {
+          throw new Error(`No se encontró la hoja "${sheetName}" en Superposiciones julio 2026 v6.xlsx`);
+        }
         return XLSX.utils.sheet_to_json<string[]>(sheet, {
           header: 1,
           raw: false,
@@ -178,13 +178,8 @@ function App() {
         });
       };
 
-      const [scoresBuffer, explanationsBuffer] = await Promise.all([
-        scoresResponse.arrayBuffer(),
-        explanationsResponse.arrayBuffer()
-      ]);
-
-      const parsedScores = parseScoreMatrix(sheetToRows(scoresBuffer));
-      const parsedExplanations = parseExplanationMatrix(sheetToRows(explanationsBuffer));
+      const parsedScores = parseScoreMatrix(sheetToRows('scores'));
+      const parsedExplanations = parseExplanationMatrix(sheetToRows('explicaciones'));
       const canonicalLabels = parsedScores.labels;
 
       const alignedExplanations = alignTextMatrixByLabels(
@@ -207,7 +202,7 @@ function App() {
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
-      toast.error('No se pudieron cargar superposiciones_scores.xlsx / superposiciones_explicaciones.xlsx');
+      toast.error('No se pudo cargar Superposiciones julio 2026 v6.xlsx');
     } finally {
       setIsLoading(false);
     }
@@ -335,10 +330,10 @@ function App() {
                 Carga automática de datos
               </h2>
               <p className="text-slate-600">
-                Se utilizan los archivos locales{' '}
-                <code className="bg-slate-100 px-1 py-0.5 rounded">data/superposiciones_scores.xlsx</code>{' '}
-                y{' '}
-                <code className="bg-slate-100 px-1 py-0.5 rounded">data/superposiciones_explicaciones.xlsx</code>.
+                Se utiliza el archivo local{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/Superposiciones julio 2026 v6.xlsx</code>{' '}
+                (hojas <code className="bg-slate-100 px-1 py-0.5 rounded">scores</code> y{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">explicaciones</code>).
               </p>
             </div>
 
