@@ -1,11 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
-import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRanking';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { Download } from 'lucide-react';
-import { createResultsWorkbook, createTrimmedWorkbook } from '@/lib/exportResults';
+import { createResultsWorkbook } from '@/lib/exportResults';
 import { formatUnitLabel } from '@/lib/unitLabels';
+import { DASHBOARD_CONFIG } from '@/lib/dashboardConfig';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
@@ -27,10 +26,10 @@ const normalizeLabel = (value?: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 const AUTH_USER = 'admin';
-const AUTH_PASS = 'bolivia2026';
-const AUTH_STORAGE_KEY = 'bolivia_auth_ok';
-const BASE_UNITS_FILENAME = 'Base completa de unidades Bolivia.xlsx';
-const baseUnitsFileUrl = new URL('../data/Base completa de unidades Bolivia.xlsx', import.meta.url).href;
+const AUTH_PASS = DASHBOARD_CONFIG.authPassword;
+const AUTH_STORAGE_KEY = DASHBOARD_CONFIG.authStorageKey;
+const scoreWorkbookUrl = new URL('../data/superposiciones_mexico_scores.xlsx', import.meta.url).href;
+const explanationWorkbookUrl = new URL('../data/superposiciones_mexico_explicaciones.xlsx', import.meta.url).href;
 
 function detectMatrixLayout(rows: string[][]): MatrixLayout {
   const header = rows[0] ?? [];
@@ -161,20 +160,29 @@ function App() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const dataUrl = new URL('../data/Superposiciones julio 2026 v6.xlsx', import.meta.url);
-      const response = await fetch(dataUrl);
+      const [scoreResponse, explanationResponse] = await Promise.all([
+        fetch(scoreWorkbookUrl),
+        fetch(explanationWorkbookUrl)
+      ]);
 
-      if (!response.ok) {
-        throw new Error('No se pudo cargar Superposiciones julio 2026 v6.xlsx');
+      if (!scoreResponse.ok) {
+        throw new Error(`No se pudo cargar ${DASHBOARD_CONFIG.scoreWorkbook}`);
+      }
+      if (!explanationResponse.ok) {
+        throw new Error(`No se pudo cargar ${DASHBOARD_CONFIG.explanationWorkbook}`);
       }
 
-      const buffer = await response.arrayBuffer();
-      const workbook = XLSX.read(buffer);
+      const [scoreBuffer, explanationBuffer] = await Promise.all([
+        scoreResponse.arrayBuffer(),
+        explanationResponse.arrayBuffer()
+      ]);
+      const scoreWorkbook = XLSX.read(scoreBuffer);
+      const explanationWorkbook = XLSX.read(explanationBuffer);
 
-      const sheetToRows = (sheetName: string): string[][] => {
+      const sheetToRows = (workbook: XLSX.WorkBook, workbookName: string, sheetName: string): string[][] => {
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) {
-          throw new Error(`No se encontró la hoja "${sheetName}" en Superposiciones julio 2026 v6.xlsx`);
+          throw new Error(`No se encontró la hoja "${sheetName}" en ${workbookName}`);
         }
         return XLSX.utils.sheet_to_json<string[]>(sheet, {
           header: 1,
@@ -183,8 +191,10 @@ function App() {
         });
       };
 
-      const parsedScores = parseScoreMatrix(sheetToRows('scores'));
-      const parsedExplanations = parseExplanationMatrix(sheetToRows('explicaciones'));
+      const parsedScores = parseScoreMatrix(sheetToRows(scoreWorkbook, DASHBOARD_CONFIG.scoreWorkbook, 'scores'));
+      const parsedExplanations = parseExplanationMatrix(
+        sheetToRows(explanationWorkbook, DASHBOARD_CONFIG.explanationWorkbook, 'explicaciones')
+      );
       const canonicalLabels = parsedScores.labels;
 
       const alignedExplanations = alignTextMatrixByLabels(
@@ -207,7 +217,7 @@ function App() {
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
-      toast.error('No se pudo cargar Superposiciones julio 2026 v6.xlsx');
+      toast.error('No se pudieron cargar los archivos de México');
     } finally {
       setIsLoading(false);
     }
@@ -252,17 +262,7 @@ function App() {
       });
 
       XLSX.writeFile(workbook, 'scores_y_superposiciones.xlsx');
-
-      const baseResponse = await fetch(baseUnitsFileUrl);
-      if (!baseResponse.ok) {
-        throw new Error('No se pudo cargar Base completa de unidades Bolivia.xlsx');
-      }
-      const baseBuffer = await baseResponse.arrayBuffer();
-      const baseWorkbook = XLSX.read(baseBuffer);
-      const trimmedBaseWorkbook = createTrimmedWorkbook(baseWorkbook, 6);
-
-      XLSX.writeFile(trimmedBaseWorkbook, BASE_UNITS_FILENAME);
-      toast.success('Archivos exportados.');
+      toast.success('Archivo exportado.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudieron exportar los archivos.');
     }
@@ -332,17 +332,17 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div
-                className="inline-flex h-9 w-12 flex-col overflow-hidden rounded-md border border-slate-300"
-                aria-label="Bandera de Bolivia"
-                title="Bolivia"
+                className="inline-flex h-9 w-12 flex-row overflow-hidden rounded-md border border-slate-300"
+                aria-label="Bandera de México"
+                title={DASHBOARD_CONFIG.countryDisplayName}
               >
-                <span className="h-1/3 bg-red-600" />
-                <span className="h-1/3 bg-yellow-400" />
-                <span className="h-1/3 bg-green-700" />
+                <span className="h-full w-1/3 bg-green-700" />
+                <span className="h-full w-1/3 bg-white" />
+                <span className="h-full w-1/3 bg-red-600" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">
-                  Análisis de superposiciones en el gobierno de Bolivia
+                  Análisis de superposiciones en el gobierno de {DASHBOARD_CONFIG.countryDisplayName}
                 </h1>
               </div>
             </div>
@@ -378,9 +378,9 @@ function App() {
               </h2>
               <p className="text-slate-600">
                 Se utiliza el archivo local{' '}
-                <code className="bg-slate-100 px-1 py-0.5 rounded">data/Superposiciones julio 2026 v6.xlsx</code>{' '}
-                (hojas <code className="bg-slate-100 px-1 py-0.5 rounded">scores</code> y{' '}
-                <code className="bg-slate-100 px-1 py-0.5 rounded">explicaciones</code>).
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/{DASHBOARD_CONFIG.scoreWorkbook}</code>{' '}
+                y{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/{DASHBOARD_CONFIG.explanationWorkbook}</code>.
               </p>
             </div>
 
@@ -394,27 +394,12 @@ function App() {
             </div>
           </div>
         ) : (
-          <Tabs defaultValue="heatmap" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="heatmap">Heatmap completo</TabsTrigger>
-              <TabsTrigger value="ranking-descentralizadas">Descentralizadas</TabsTrigger>
-            </TabsList>
-            <TabsContent value="heatmap" className="space-y-6">
-              <GlobalHeatmapView
-                labels={pairwiseLabels}
-                scoreMatrix={scoreMatrix}
-                explanationMatrix={explanationMatrix}
-                error={loadError}
-              />
-            </TabsContent>
-            <TabsContent value="ranking-descentralizadas" className="space-y-6">
-              <DecentralizedOverlapRanking
-                labels={pairwiseLabels}
-                scoreMatrix={scoreMatrix}
-                explanationMatrix={explanationMatrix}
-              />
-            </TabsContent>
-          </Tabs>
+          <GlobalHeatmapView
+            labels={pairwiseLabels}
+            scoreMatrix={scoreMatrix}
+            explanationMatrix={explanationMatrix}
+            error={loadError}
+          />
         )}
       </main>
 
