@@ -4,7 +4,7 @@ import { DecentralizedOverlapRanking } from '@/components/DecentralizedOverlapRa
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { Download } from 'lucide-react';
-import { createResultsWorkbook, downloadFile } from '@/lib/exportResults';
+import { createResultsWorkbook, createTrimmedWorkbook } from '@/lib/exportResults';
 import { formatUnitLabel } from '@/lib/unitLabels';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -238,21 +238,34 @@ function App() {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
   }, []);
 
-  const handleExportResults = useCallback(() => {
+  const handleExportResults = useCallback(async () => {
     if (!scoreMatrix || !explanationMatrix || pairwiseLabels.length === 0) {
       toast.error('No hay datos para exportar.');
       return;
     }
 
-    const workbook = createResultsWorkbook({
-      labels: pairwiseLabels,
-      scoreMatrix,
-      explanationMatrix
-    });
+    try {
+      const workbook = createResultsWorkbook({
+        labels: pairwiseLabels,
+        scoreMatrix,
+        explanationMatrix
+      });
 
-    XLSX.writeFile(workbook, 'scores_y_superposiciones.xlsx');
-    downloadFile(baseUnitsFileUrl, BASE_UNITS_FILENAME);
-    toast.success('Archivos exportados.');
+      XLSX.writeFile(workbook, 'scores_y_superposiciones.xlsx');
+
+      const baseResponse = await fetch(baseUnitsFileUrl);
+      if (!baseResponse.ok) {
+        throw new Error('No se pudo cargar Base completa de unidades Bolivia.xlsx');
+      }
+      const baseBuffer = await baseResponse.arrayBuffer();
+      const baseWorkbook = XLSX.read(baseBuffer);
+      const trimmedBaseWorkbook = createTrimmedWorkbook(baseWorkbook, 6);
+
+      XLSX.writeFile(trimmedBaseWorkbook, BASE_UNITS_FILENAME);
+      toast.success('Archivos exportados.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudieron exportar los archivos.');
+    }
   }, [scoreMatrix, explanationMatrix, pairwiseLabels]);
 
   if (!isAuthenticated) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as XLSX from 'xlsx';
 
-import { createResultsWorkbook, downloadFile } from '../src/lib/exportResults.ts';
+import { createResultsWorkbook, createTrimmedWorkbook, downloadFile } from '../src/lib/exportResults.ts';
 
 test('creates a workbook with scores and superposiciones sheets', () => {
   const workbook = createResultsWorkbook({
@@ -66,4 +66,30 @@ test('downloads a static file through an anchor element', () => {
   assert.deepEqual(clicked, ['/assets/base.xlsx']);
   assert.deepEqual(removed, ['Base completa de unidades Bolivia.xlsx']);
   assert.equal(link.rel, 'noopener');
+});
+
+test('trims a workbook to the first sheet and columns A through F', () => {
+  const source = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    source,
+    XLSX.utils.aoa_to_sheet([
+      ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'],
+      ['A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2']
+    ]),
+    'base'
+  );
+  XLSX.utils.book_append_sheet(
+    source,
+    XLSX.utils.aoa_to_sheet([['otra solapa']]),
+    'extra'
+  );
+
+  const trimmed = createTrimmedWorkbook(source, 6);
+
+  assert.deepEqual(trimmed.SheetNames, ['base']);
+  const rows = XLSX.utils.sheet_to_json(trimmed.Sheets.base, { header: 1 });
+  assert.deepEqual(rows, [
+    ['A1', 'B1', 'C1', 'D1', 'E1', 'F1'],
+    ['A2', 'B2', 'C2', 'D2', 'E2', 'F2']
+  ]);
 });
