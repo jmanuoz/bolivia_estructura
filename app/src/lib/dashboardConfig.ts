@@ -5,5 +5,6 @@ export const DASHBOARD_CONFIG = {
   authStorageKey: 'mexico_auth_ok',
   scoreWorkbook: 'superposiciones_mexico_scores.xlsx',
   explanationWorkbook: 'superposiciones_mexico_explicaciones.xlsx',
+  unitBaseWorkbook: 'Base unidades final Mexico.xlsx',
   showRanking: false
 } as const;

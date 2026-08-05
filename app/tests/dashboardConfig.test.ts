@@ -8,4 +8,5 @@ test('configures the dashboard for Mexico without ranking', () => {
   assert.equal(DASHBOARD_CONFIG.showRanking, false);
   assert.equal(DASHBOARD_CONFIG.scoreWorkbook, 'superposiciones_mexico_scores.xlsx');
   assert.equal(DASHBOARD_CONFIG.explanationWorkbook, 'superposiciones_mexico_explicaciones.xlsx');
+  assert.equal(DASHBOARD_CONFIG.unitBaseWorkbook, 'Base unidades final Mexico.xlsx');
 });

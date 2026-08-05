@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GlobalHeatmapView } from '@/components/GlobalHeatmapView';
 import { Toaster } from '@/components/ui/sonner';
-import { Download } from 'lucide-react';
-import { createResultsWorkbook } from '@/lib/exportResults';
+import { Database, Download } from 'lucide-react';
+import { createResultsWorkbook, downloadFile } from '@/lib/exportResults';
 import { formatUnitLabel } from '@/lib/unitLabels';
 import { DASHBOARD_CONFIG } from '@/lib/dashboardConfig';
 import { toast } from 'sonner';
@@ -28,8 +28,14 @@ const normalizeLabel = (value?: string) =>
 const AUTH_USER = 'admin';
 const AUTH_PASS = DASHBOARD_CONFIG.authPassword;
 const AUTH_STORAGE_KEY = DASHBOARD_CONFIG.authStorageKey;
-const scoreWorkbookUrl = new URL('../data/superposiciones_mexico_scores.xlsx', import.meta.url).href;
-const explanationWorkbookUrl = new URL('../data/superposiciones_mexico_explicaciones.xlsx', import.meta.url).href;
+const workbookUrls = {
+  'superposiciones_mexico_scores.xlsx': new URL('../data/superposiciones_mexico_scores.xlsx', import.meta.url).href,
+  'superposiciones_mexico_explicaciones.xlsx': new URL('../data/superposiciones_mexico_explicaciones.xlsx', import.meta.url).href,
+  'Base unidades final Mexico.xlsx': new URL('../data/Base unidades final Mexico.xlsx', import.meta.url).href
+} as const;
+const scoreWorkbookUrl = workbookUrls[DASHBOARD_CONFIG.scoreWorkbook];
+const explanationWorkbookUrl = workbookUrls[DASHBOARD_CONFIG.explanationWorkbook];
+const unitBaseWorkbookUrl = workbookUrls[DASHBOARD_CONFIG.unitBaseWorkbook];
 
 function detectMatrixLayout(rows: string[][]): MatrixLayout {
   const header = rows[0] ?? [];
@@ -160,9 +166,10 @@ function App() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [scoreResponse, explanationResponse] = await Promise.all([
+      const [scoreResponse, explanationResponse, unitBaseResponse] = await Promise.all([
         fetch(scoreWorkbookUrl),
-        fetch(explanationWorkbookUrl)
+        fetch(explanationWorkbookUrl),
+        fetch(unitBaseWorkbookUrl)
       ]);
 
       if (!scoreResponse.ok) {
@@ -170,6 +177,9 @@ function App() {
       }
       if (!explanationResponse.ok) {
         throw new Error(`No se pudo cargar ${DASHBOARD_CONFIG.explanationWorkbook}`);
+      }
+      if (!unitBaseResponse.ok) {
+        throw new Error(`No se pudo cargar ${DASHBOARD_CONFIG.unitBaseWorkbook}`);
       }
 
       const [scoreBuffer, explanationBuffer] = await Promise.all([
@@ -268,6 +278,10 @@ function App() {
     }
   }, [scoreMatrix, explanationMatrix, pairwiseLabels]);
 
+  const handleDownloadUnitBase = useCallback(() => {
+    downloadFile(unitBaseWorkbookUrl, DASHBOARD_CONFIG.unitBaseWorkbook);
+  }, []);
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
@@ -359,6 +373,14 @@ function App() {
               )}
               <button
                 type="button"
+                onClick={handleDownloadUnitBase}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50"
+              >
+                <Database className="h-4 w-4" />
+                Base de unidades
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
               >
@@ -381,6 +403,8 @@ function App() {
                 <code className="bg-slate-100 px-1 py-0.5 rounded">data/{DASHBOARD_CONFIG.scoreWorkbook}</code>{' '}
                 y{' '}
                 <code className="bg-slate-100 px-1 py-0.5 rounded">data/{DASHBOARD_CONFIG.explanationWorkbook}</code>.
+                La base de unidades se toma de{' '}
+                <code className="bg-slate-100 px-1 py-0.5 rounded">data/{DASHBOARD_CONFIG.unitBaseWorkbook}</code>.
               </p>
             </div>
 
