@@ -96,12 +96,38 @@ function alignTextMatrixByLabels(
   });
 }
 
+function parseUnitDependencies(rows: string[][]): Map<string, string> {
+  const header = rows[0] ?? [];
+  const unitColumn = header.findIndex((value) => normalizeLabel(value) === 'unidad');
+  const secretariaColumn = header.findIndex((value) => normalizeLabel(value) === 'secretaria');
+  const institucionColumn = header.findIndex((value) => normalizeLabel(value) === 'institucion');
+  const dependencies = new Map<string, string>();
+
+  if (unitColumn < 0 || (secretariaColumn < 0 && institucionColumn < 0)) {
+    return dependencies;
+  }
+
+  rows.slice(1).forEach((row) => {
+    const unit = row[unitColumn]?.trim();
+    const dependency =
+      row[secretariaColumn]?.trim() ||
+      row[institucionColumn]?.trim() ||
+      '';
+
+    if (!unit || !dependency) return;
+    dependencies.set(normalizeLabel(formatUnitLabel(unit)), formatUnitLabel(dependency));
+  });
+
+  return dependencies;
+}
+
 function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scoreMatrix, setScoreMatrix] = useState<number[][] | null>(null);
   const [explanationMatrix, setExplanationMatrix] = useState<string[][] | null>(null);
   const [pairwiseLabels, setPairwiseLabels] = useState<string[]>([]);
+  const [unitDependencies, setUnitDependencies] = useState<Map<string, string>>(() => new Map());
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -182,12 +208,14 @@ function App() {
         throw new Error(`No se pudo cargar ${DASHBOARD_CONFIG.unitBaseWorkbook}`);
       }
 
-      const [scoreBuffer, explanationBuffer] = await Promise.all([
+      const [scoreBuffer, explanationBuffer, unitBaseBuffer] = await Promise.all([
         scoreResponse.arrayBuffer(),
-        explanationResponse.arrayBuffer()
+        explanationResponse.arrayBuffer(),
+        unitBaseResponse.arrayBuffer()
       ]);
       const scoreWorkbook = XLSX.read(scoreBuffer);
       const explanationWorkbook = XLSX.read(explanationBuffer);
+      const unitBaseWorkbook = XLSX.read(unitBaseBuffer);
 
       const sheetToRows = (workbook: XLSX.WorkBook, workbookName: string, sheetName: string): string[][] => {
         const sheet = workbook.Sheets[sheetName];
@@ -205,6 +233,10 @@ function App() {
       const parsedExplanations = parseExplanationMatrix(
         sheetToRows(explanationWorkbook, DASHBOARD_CONFIG.explanationWorkbook, 'explicaciones')
       );
+      const unitBaseSheetName = unitBaseWorkbook.SheetNames[0];
+      const parsedUnitDependencies = unitBaseSheetName
+        ? parseUnitDependencies(sheetToRows(unitBaseWorkbook, DASHBOARD_CONFIG.unitBaseWorkbook, unitBaseSheetName))
+        : new Map<string, string>();
       const canonicalLabels = parsedScores.labels;
 
       const alignedExplanations = alignTextMatrixByLabels(
@@ -216,6 +248,7 @@ function App() {
       setScoreMatrix(parsedScores.matrix);
       setExplanationMatrix(alignedExplanations);
       setPairwiseLabels(canonicalLabels);
+      setUnitDependencies(parsedUnitDependencies);
 
       const explanationLabelSet = new Set(parsedExplanations.labels.map(normalizeLabel));
       const missingInExplanations = canonicalLabels.filter((label) => !explanationLabelSet.has(normalizeLabel(label)));
@@ -227,6 +260,7 @@ function App() {
       setScoreMatrix(null);
       setExplanationMatrix(null);
       setPairwiseLabels([]);
+      setUnitDependencies(new Map());
       toast.error('No se pudieron cargar los archivos de México');
     } finally {
       setIsLoading(false);
@@ -422,6 +456,7 @@ function App() {
             labels={pairwiseLabels}
             scoreMatrix={scoreMatrix}
             explanationMatrix={explanationMatrix}
+            unitDependencies={unitDependencies}
             error={loadError}
           />
         )}

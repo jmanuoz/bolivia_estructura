@@ -4,12 +4,13 @@ import { Badge } from '@/components/ui/badge';
 import { ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { decentralizedPriority } from '@/lib/unitLabels';
+import { compareDifferentDependenciesFirst, decentralizedPriority } from '@/lib/unitLabels';
 
 interface GlobalHeatmapViewProps {
   labels: string[];
   scoreMatrix: number[][] | null;
   explanationMatrix: string[][] | null;
+  unitDependencies?: Map<string, string>;
   error?: string | null;
 }
 
@@ -82,6 +83,7 @@ export function GlobalHeatmapView({
   labels,
   scoreMatrix,
   explanationMatrix,
+  unitDependencies,
   error
 }: GlobalHeatmapViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -132,11 +134,15 @@ export function GlobalHeatmapView({
       .map((group) => ({
         ...group,
         pairs: [...group.pairs].sort(
-          (a, b) => pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)
+          (a, b) =>
+            (unitDependencies?.size
+              ? compareDifferentDependenciesFirst(a, b, unitDependencies)
+              : pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)) ||
+            pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)
         )
       }))
       .sort((a, b) => b.score - a.score);
-  }, [scoreMatrix, explanationMatrix, labels, n]);
+  }, [scoreMatrix, explanationMatrix, labels, n, unitDependencies]);
 
   const scoreStatsWithEmptyLevels = useMemo<PairByScore[]>(() => {
     const byScore = new Map(scoreStats.map((item) => [item.scoreText, item]));

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   compareDecentralizedFirst,
+  compareDifferentDependenciesFirst,
   formatUnitLabel,
   isDecentralizedUnit
 } from '../src/lib/unitLabels.ts';
@@ -36,4 +37,26 @@ test('sorts decentralized units first, then by score descending', () => {
       'tab'
     ]
   );
+});
+
+test('sorts pairs from different dependencies before pairs from the same dependency', () => {
+  const unitDependencies = new Map([
+    ['unidad a', 'dependencia uno'],
+    ['unidad b', 'dependencia uno'],
+    ['unidad c', 'dependencia dos'],
+    ['unidad d', 'dependencia tres']
+  ]);
+  const pairs = [
+    { rowLabel: 'unidad a', colLabel: 'unidad b' },
+    { rowLabel: 'unidad c', colLabel: 'unidad d' },
+    { rowLabel: 'unidad a', colLabel: 'unidad c' }
+  ];
+
+  pairs.sort((a, b) => compareDifferentDependenciesFirst(a, b, unitDependencies));
+
+  assert.deepEqual(pairs, [
+    { rowLabel: 'unidad a', colLabel: 'unidad c' },
+    { rowLabel: 'unidad c', colLabel: 'unidad d' },
+    { rowLabel: 'unidad a', colLabel: 'unidad b' }
+  ]);
 });

@@ -3,6 +3,11 @@ export interface ScoredUnit {
   score?: number;
 }
 
+export interface UnitPair {
+  rowLabel: string;
+  colLabel: string;
+}
+
 const MINISTRY_PREFIXES = ['ministerio de', 'ministerio del', 'viceministerio de', 'viceministerio del'];
 
 const ENTERPRISE_LABELS = new Set([
@@ -257,5 +262,25 @@ export function compareDecentralizedFirst<T extends ScoredUnit>(a: T, b: T): num
     decentralizedPriority(a.label) - decentralizedPriority(b.label) ||
     (b.score ?? 0) - (a.score ?? 0) ||
     a.label.localeCompare(b.label, 'es')
+  );
+}
+
+function pairDependencyPriority(pair: UnitPair, unitDependencies: Map<string, string>): number {
+  const rowDependency = unitDependencies.get(normalizeUnitLabel(pair.rowLabel));
+  const colDependency = unitDependencies.get(normalizeUnitLabel(pair.colLabel));
+
+  if (!rowDependency || !colDependency) return 1;
+  return normalizeUnitLabel(rowDependency) === normalizeUnitLabel(colDependency) ? 1 : 0;
+}
+
+export function compareDifferentDependenciesFirst<T extends UnitPair>(
+  a: T,
+  b: T,
+  unitDependencies: Map<string, string>
+): number {
+  return (
+    pairDependencyPriority(a, unitDependencies) - pairDependencyPriority(b, unitDependencies) ||
+    a.rowLabel.localeCompare(b.rowLabel, 'es') ||
+    a.colLabel.localeCompare(b.colLabel, 'es')
   );
 }
