@@ -380,13 +380,51 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div
-                className="inline-flex h-9 w-12 flex-row overflow-hidden rounded-md border border-slate-300"
+                className="relative inline-flex h-9 w-12 flex-row overflow-hidden rounded-md border border-slate-300"
                 aria-label="Bandera de México"
                 title={DASHBOARD_CONFIG.countryDisplayName}
               >
                 <span className="h-full w-1/3 bg-green-700" />
                 <span className="h-full w-1/3 bg-white" />
                 <span className="h-full w-1/3 bg-red-600" />
+                <svg
+                  viewBox="0 0 28 28"
+                  className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2"
+                  aria-hidden="true"
+                >
+                  <circle cx="14" cy="14" r="7.5" fill="#f8fafc" stroke="#0f5132" strokeWidth="1" />
+                  <path
+                    d="M8.5 17.2c2.5 3.2 8.7 3.2 11 0"
+                    fill="none"
+                    stroke="#0f5132"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M15.5 7.8c-3.5.4-5.3 2.4-5 5 .3 2.2 2 3.8 4.4 4.2 1.7.3 3.1-.2 4.4-1.4-2 .1-3.2-.6-3.7-2.2-.4-1.1.1-2.2 1.2-3.4"
+                    fill="#7a3f16"
+                    stroke="#5f2f10"
+                    strokeWidth="0.8"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M11.6 15.6c-.5-2.5.1-4.7 1.9-6.4"
+                    fill="none"
+                    stroke="#0f5132"
+                    strokeWidth="1.1"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M17.1 9.9l3-.8-2.1 1.9"
+                    fill="none"
+                    stroke="#5f2f10"
+                    strokeWidth="0.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path d="M13.2 18.6c.2-2.5.9-4.4 2.1-5.8" stroke="#15803d" strokeWidth="1" strokeLinecap="round" />
+                  <path d="M12.7 19.1h4.1" stroke="#b45309" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">
