@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ListFilter } from 'lucide-react';
 import { interpolateYlOrRd } from 'd3-scale-chromatic';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { compareDifferentDependenciesFirst, decentralizedPriority } from '@/lib/unitLabels';
+import { decentralizedPriority, normalizeUnitLabel } from '@/lib/unitLabels';
 
 interface GlobalHeatmapViewProps {
   labels: string[];
@@ -23,6 +23,8 @@ interface PairByScore {
     colIdx: number;
     rowLabel: string;
     colLabel: string;
+    dependencyPriority: number;
+    unitTypePriority: number;
     explanation: string;
   }>;
 }
@@ -55,8 +57,9 @@ function compactLabel(value: string, max = 46): string {
   return `${value.slice(0, max - 1)}…`;
 }
 
-function pairPriority(rowLabel: string, colLabel: string): number {
-  return Math.min(decentralizedPriority(rowLabel), decentralizedPriority(colLabel));
+function getDependencyPriority(rowDependency?: string, colDependency?: string): number {
+  if (!rowDependency || !colDependency) return 1;
+  return rowDependency === colDependency ? 1 : 0;
 }
 
 function getContrastTextFromRgb(rgbString: string): string {
@@ -95,6 +98,20 @@ export function GlobalHeatmapView({
     return Math.min(labels.length, scoreMatrix.length);
   }, [labels, scoreMatrix]);
 
+  const normalizedDependencies = useMemo(() => {
+    if (!unitDependencies?.size) return [];
+
+    return labels.map((label) => {
+      const dependency = unitDependencies.get(normalizeUnitLabel(label));
+      return dependency ? normalizeUnitLabel(dependency) : '';
+    });
+  }, [labels, unitDependencies]);
+
+  const unitTypePriorities = useMemo(
+    () => labels.map((label) => decentralizedPriority(label)),
+    [labels]
+  );
+
   const scoreStats = useMemo<PairByScore[]>(() => {
     if (!scoreMatrix || n === 0) return [];
 
@@ -112,6 +129,8 @@ export function GlobalHeatmapView({
           colIdx: j,
           rowLabel: labels[i] ?? `Unidad ${i}`,
           colLabel: labels[j] ?? `Unidad ${j}`,
+          dependencyPriority: getDependencyPriority(normalizedDependencies[i], normalizedDependencies[j]),
+          unitTypePriority: Math.min(unitTypePriorities[i] ?? 1, unitTypePriorities[j] ?? 1),
           explanation: explanationMatrix?.[i]?.[j] || 'Sin explicación disponible.'
         };
 
@@ -135,14 +154,14 @@ export function GlobalHeatmapView({
         ...group,
         pairs: [...group.pairs].sort(
           (a, b) =>
-            (unitDependencies?.size
-              ? compareDifferentDependenciesFirst(a, b, unitDependencies)
-              : pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)) ||
-            pairPriority(a.rowLabel, a.colLabel) - pairPriority(b.rowLabel, b.colLabel)
+            a.dependencyPriority - b.dependencyPriority ||
+            a.unitTypePriority - b.unitTypePriority ||
+            a.rowLabel.localeCompare(b.rowLabel, 'es') ||
+            a.colLabel.localeCompare(b.colLabel, 'es')
         )
       }))
       .sort((a, b) => b.score - a.score);
-  }, [scoreMatrix, explanationMatrix, labels, n, unitDependencies]);
+  }, [scoreMatrix, explanationMatrix, labels, n, normalizedDependencies, unitTypePriorities]);
 
   const scoreStatsWithEmptyLevels = useMemo<PairByScore[]>(() => {
     const byScore = new Map(scoreStats.map((item) => [item.scoreText, item]));
